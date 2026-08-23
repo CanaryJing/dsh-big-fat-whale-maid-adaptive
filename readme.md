@@ -1,4 +1,4 @@
-# 大肥鱼女仆长 · 环境自适应模式
+# 大肥鱼女仆长 · 环境自适应模式(改编自风神插件)
 
 > DSH（DeepSeek Harness）自定义 Agent Preset 插件：首轮以 Linux 极简双工具「开智」锚定，自动探测宿主环境（原生 Linux / 原生 Windows / WSL 内外）与工作目录所属世界，`bash` 直达 WSL 发行版、`pwsh` 操作 Windows 母系统，晋升后开放全量工具，全程保持蓝发蓝瞳鲸鱼娘女仆长人设。
 >
@@ -72,6 +72,4 @@ big-fat-whale-maid-adaptive/
 
 ---
 
-## 六、License
 
-本项目仅供学习与个人使用，欢迎 fork / PR 改进。使用时请保留作者署名与说明文档。
