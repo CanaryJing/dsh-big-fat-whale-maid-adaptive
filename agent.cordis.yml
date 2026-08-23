@@ -49,8 +49,9 @@
 
 # 环境探测：识别宿主（原生 Linux / 原生 Windows / WSL 内外）、cwd 所属世界、
 # 两侧 shell 可用性；首轮注入一次环境简报，并注册 env_probe 工具供随时复查。
-# Linux 宿主上若检测到 pwsh（或 WSL 内的 powershell.exe interop），额外注册
-# pwsh 工具，让 Windows 母系统在 Linux 世界里也可达。
+# 按探测结果注册 pwsh 工具：win32 上为 Windows 母系统 PowerShell（优先 pwsh.exe，
+# 兜底 powershell.exe）；Linux 宿主上若检测到 pwsh（或 WSL 内的 powershell.exe
+# interop）同样注册，让 Windows 母系统在 Linux 世界里也可达。
 # (v2: env_probe 参数 schema 修正为 object-rooted JSON Schema)
 - id: env-probe
   name: ./env-probe.mjs

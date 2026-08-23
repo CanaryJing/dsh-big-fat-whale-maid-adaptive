@@ -84,7 +84,7 @@ big-fat-whale-maid-adaptive/
 | id | 类型 | 作用 |
 |---|---|---|
 | `tool-bootstrap` | `./tool-bootstrap.mjs` | 必须排第一。首轮只暴露 `bash + str_replace_editor`，抑制 `agent-instructions` 与 `skill-catalog` 注入；`promoteOn: either`；bootstrap 工具缺失时 fail-open 到全量目录 |
-| `env-probe` | `./env-probe.mjs` | 挂载时探测静态环境；每会话首轮注入环境简报（source kind `env-probe`）；注册 `env_probe` 工具；非 win32 且探测到 pwsh/powershell.exe 时注册 `pwsh` 工具 |
+| `env-probe` | `./env-probe.mjs` | 挂载时探测静态环境；每会话首轮注入环境简报（source kind `env-probe`）；注册 `env_probe` 工具；按探测结果注册 `pwsh` 工具（win32=Windows 母系统 PowerShell；非 win32=原生 pwsh 或 powershell.exe interop） |
 | `persona` | `@deepseek-ai/dsh-persona` | 女仆长人设 + 外貌设定；`complete: true`、`includeRuntimeContext: false` |
 | `agent-instructions` | `@deepseek-ai/dsh-agent-instructions` | 晋升后注入 AGENTS.md 摘要 |
 | `native-persistent-shell` | cordis:group，isolate `terminals` | 非 win32 提供 Minimal 同款持久 PTY bash（工具名 `bash`）；`disabled: win32` |
@@ -121,11 +121,11 @@ big-fat-whale-maid-adaptive/
 ### 4.4 `env-probe.mjs` 接口
 
 - 导出测试函数：`probeStatic(timeoutMs)`、`worldOf(cwd)`、`buildBrief(snapshot, cwd)`
-- `probeStatic`：platform + insideWsl（/proc/version + WSL_DISTRO_NAME）+ `wsl.exe -l -q` + Lxss 注册表默认发行版（Windows）；Linux 上探测 pwsh / WSL 内 powershell.exe interop / wine。失败一律降级。
+- `probeStatic`：platform + insideWsl（/proc/version + WSL_DISTRO_NAME）+ `wsl.exe -l -q` + Lxss 注册表默认发行版（Windows）；win32 上探测 Windows 母系统 PowerShell（pwsh.exe / powershell.exe）；Linux 上探测 pwsh / WSL 内 powershell.exe interop / wine。失败一律降级。
 - `worldOf`：UNC → wsl 世界；`/…` → linux；`X:\…` → windows（附 `/mnt/x/…` 换算）。
 - pre-step 每会话注入一次简报（`source.kind = 'env-probe'`，Set 去重，异常静默跳过）。
 - `env_probe` 工具：无参数但必须 object-rooted JSON Schema（**勿改回 `{}`**）。
-- `pwsh` 工具：仅非 win32 且后端可用时注册；WSL 内优先 Linux 原生 pwsh，其次 `powershell.exe` interop。
+- `pwsh` 工具：按探测结果注册——win32 上为 Windows 母系统 PowerShell（优先 `pwsh.exe`，兜底 `powershell.exe`）；非 win32 上 WSL 内优先 Linux 原生 pwsh，其次 `powershell.exe` interop。
 
 ---
 

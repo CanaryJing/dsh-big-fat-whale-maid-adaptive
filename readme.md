@@ -27,6 +27,7 @@
 
 - ✅ **零外部插件依赖**：三个 `.mjs` 只使用 `node:` 内置模块，用户预设目录下可直接运行。
 - ✅ **平台互斥自动分派**：win32 与非 win32 各只有一组 `bash`/`str_replace_editor` 提供者，绝无重复注册。
+- ✅ **win32 原生 PowerShell 工具**：Windows 宿主上自动探测并注册 `pwsh` 工具（优先 PowerShell 7 的 `pwsh.exe`，兜底 Windows PowerShell 5.1 的 `powershell.exe`），可直接操作 Windows 母系统。
 - ✅ **`wsl-` 变体自禁用**：被 `dsh-wsl-workspace` 生成器复制为 `wsl-*` 变体时自动让位，避免工具冲突。
 - ✅ **无机器相关路径**：不含任何绝对路径，装到任何机器都无需改配置。
 - ✅ **安全降级**：WSL 缺失、shell 探测失败等场景一律 fail-open，不阻断预设运行。

@@ -6,8 +6,9 @@
  *   2. 每个会话第一次请求前注入一份「环境简报」，告诉模型 bash/pwsh/文件工具
  *      各自运行在哪个世界，以及两个世界之间的路径互转规则；
  *   3. 注册 env_probe 工具：随时复查环境，并实际冒烟测试两侧 shell；
- *   4. 非 Windows 宿主上若探测到 pwsh（原生 Linux 的 pwsh，或 WSL 内的
- *      powershell.exe interop），注册 pwsh 工具，让模型能触达 Windows 母系统。
+ *   4. 按探测结果注册 pwsh 工具：win32 上为 Windows 母系统 PowerShell（优先
+ *      pwsh.exe，兜底 powershell.exe）；非 Windows 宿主上为原生 Linux 的 pwsh
+ *      或 WSL 内的 powershell.exe interop，让模型始终能触达 Windows 母系统。
  *
  * 设计约束：
  *   - 零外部依赖：用户 home 下的 preset 无法解析 harness 的 node_modules，
@@ -18,7 +19,7 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 
 /** Cordis 插件名（loader 诊断用）。 */
 export const name = 'whale-maid-env-probe'
@@ -148,6 +149,35 @@ function linuxWhich(cmd) {
   return first === undefined || first === '' ? undefined : first
 }
 
+/** Windows 母系统 PowerShell 探测（win32 专用）：pwsh.exe 优先，powershell.exe 兜底。 */
+function detectWindowsPowerShell() {
+  const candidates = []
+  const programFiles = process.env.ProgramFiles
+  if (typeof programFiles === 'string' && programFiles.length > 0) {
+    candidates.push({
+      label: 'Windows 母系统 PowerShell（PowerShell 7，pwsh.exe）',
+      path: `${programFiles}\\PowerShell\\7\\pwsh.exe`,
+    })
+  }
+  const systemRoot = process.env.SystemRoot
+  if (typeof systemRoot === 'string' && systemRoot.length > 0) {
+    candidates.push({
+      label: 'Windows 母系统 PowerShell（Windows PowerShell 5.1，powershell.exe）',
+      path: `${systemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`,
+    })
+  }
+  for (const cand of candidates) {
+    try {
+      if (existsSync(cand.path)) {
+        return { label: cand.label, argv: [cand.path, '-NoProfile', '-Command'] }
+      }
+    } catch {
+      // 路径含非法字符等极端情况：跳过该候选。
+    }
+  }
+  return undefined
+}
+
 /** 是否运行在 WSL 发行版内部（Linux 内核 + Microsoft 标记）。 */
 function detectInsideWsl() {
   if (process.platform !== 'linux') return false
@@ -174,7 +204,7 @@ export function probeStatic(timeoutMs) {
       : String(platform),
     insideWsl,
     wsl: { installed: false, distros: [], defaultDistro: undefined },
-    pwsh: undefined, // { label, argv } 非 Windows 宿主上的可用 pwsh 后端
+    pwsh: undefined, // { label, argv } 可用 PowerShell 后端（win32=Windows 母系统；非 win32=跨到 Windows 的 interop）
     wine: undefined,
   }
 
@@ -185,6 +215,8 @@ export function probeStatic(timeoutMs) {
       distros,
       defaultDistro: defaultDistro(timeoutMs) ?? distros[0],
     }
+    // Windows 母系统 PowerShell：优先 PowerShell 7（pwsh.exe），兜底 Windows PowerShell 5.1。
+    snapshot.pwsh = detectWindowsPowerShell()
   } else {
     // 原生 Linux / WSL 内：探测 pwsh 与 Windows interop。
     const pwshPath = linuxWhich('pwsh')
@@ -213,7 +245,9 @@ function shellRoutes(snapshot, world) {
     const distro = world.world === 'wsl' ? world.distro : (snapshot.wsl.defaultDistro ?? '?')
     return {
       bash: `bash  →  WSL 发行版「${distro}」内的 Linux bash（自包含 wsl.exe 调用，Linux 路径原生可用）`,
-      pwsh: 'pwsh  →  Windows 母系统 PowerShell（Windows 路径原生可用）',
+      pwsh: snapshot.pwsh !== undefined
+        ? `pwsh  →  ${snapshot.pwsh.label}（env-probe 已注册）`
+        : 'pwsh  →  未检测到可用的 PowerShell，不可用',
       files: 'read/write/edit/str_replace_editor  →  Windows 宿主文件系统（Windows 路径与 \\\\wsl.localhost\\\\<distro>\\\\… 均可）；WSL 侧也可直接交给 bash',
       search: 'glob/grep  →  本平台未注册（Windows ripgrep 读不了 WSL 路径）；WSL 侧请用 bash 的 find/grep',
     }
@@ -305,17 +339,11 @@ function smokeBash(snapshot, timeoutMs) {
   return smokeCapture(['bash', '-lc', 'echo env_probe_bash_ok; uname -srm; echo shell=$0; pwd'], timeoutMs)
 }
 
-/** 测试 pwsh 后端（Windows 宿主 → 母系统 PowerShell；其余 → env-probe 探测到的后端）。 */
+/** 测试 pwsh 后端（win32=Windows 母系统 PowerShell；非 win32=探测到的跨世界后端）。 */
 function smokePwsh(snapshot, timeoutMs) {
-  if (snapshot.platform === 'win32') {
-    return smokeCapture(
-      ['pwsh', '-NoProfile', '-Command', "'env_probe_pwsh_ok'; $PSVersionTable.PSVersion.ToString(); $env:OS"],
-      timeoutMs,
-    )
-  }
   if (snapshot.pwsh === undefined) return '未检测到可用的 PowerShell，跳过 pwsh 冒烟测试'
   return smokeCapture(
-    [...snapshot.pwsh.argv.slice(0, -1), "'env_probe_pwsh_ok'; $PSVersionTable.PSVersion.ToString()"],
+    [...snapshot.pwsh.argv.slice(0, -1), "'env_probe_pwsh_ok'; $PSVersionTable.PSVersion.ToString(); $env:OS"],
     timeoutMs,
   )
 }
@@ -428,17 +456,21 @@ export function apply(ctx, config) {
     })
   })
 
-  // ── 3) 非 Windows 宿主：按探测结果注册 pwsh 工具 ───────────────────────
-  if (snapshot.platform !== 'win32' && snapshot.pwsh !== undefined) {
+  // ── 3) 按探测结果注册 pwsh 工具（win32=Windows 母系统 PowerShell；非 win32=跨世界后端）──
+  if (snapshot.pwsh !== undefined) {
     const argv0 = snapshot.pwsh.argv.slice(0, -1)
     const label = snapshot.pwsh.label
+    const description = snapshot.platform === 'win32'
+      ? `Run a PowerShell command on the Windows mother system. Backend: ${label}. ` +
+        'Use it to operate the Windows host directly (registry, services, files, Git, etc.). ' +
+        'Commands run in a fresh process; non-zero exit codes are reported as errors.'
+      : `Run a PowerShell command. Backend: ${label}. ` +
+        'Use it to reach the Windows mother system when running inside WSL (powershell.exe interop) ' +
+        'or to drive PowerShell on native Linux. Commands run in a fresh process; non-zero exit codes are reported as errors.'
     ctx.effect(() => {
       ctx.tools.register({
         name: 'pwsh',
-        description:
-          `Run a PowerShell command. Backend: ${label}. ` +
-          'Use it to reach the Windows mother system when running inside WSL (powershell.exe interop) ' +
-          'or to drive PowerShell on native Linux. Commands run in a fresh process; non-zero exit codes are reported as errors.',
+        description,
         parameters: toJsonSchema({
           command: { type: 'string', required: true, description: 'The PowerShell command to execute.' },
           workdir: { type: 'string', description: 'Optional working directory; defaults to the session cwd.' },
