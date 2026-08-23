@@ -343,7 +343,7 @@ function smokeBash(snapshot, timeoutMs) {
 function smokePwsh(snapshot, timeoutMs) {
   if (snapshot.pwsh === undefined) return '未检测到可用的 PowerShell，跳过 pwsh 冒烟测试'
   return smokeCapture(
-    [...snapshot.pwsh.argv.slice(0, -1), "'env_probe_pwsh_ok'; $PSVersionTable.PSVersion.ToString(); $env:OS"],
+    [...snapshot.pwsh.argv, "'env_probe_pwsh_ok'; $PSVersionTable.PSVersion.ToString(); $env:OS"],
     timeoutMs,
   )
 }
@@ -458,7 +458,7 @@ export function apply(ctx, config) {
 
   // ── 3) 按探测结果注册 pwsh 工具（win32=Windows 母系统 PowerShell；非 win32=跨世界后端）──
   if (snapshot.pwsh !== undefined) {
-    const argv0 = snapshot.pwsh.argv.slice(0, -1)
+    const pwshArgv = snapshot.pwsh.argv
     const label = snapshot.pwsh.label
     const description = snapshot.platform === 'win32'
       ? `Run a PowerShell command on the Windows mother system. Backend: ${label}. ` +
@@ -483,7 +483,7 @@ export function apply(ctx, config) {
               : exec?.agent?.session?.header?.cwd
           const signal = exec?.signal
           const handle = ctx.subprocess.spawn({
-            argv: [...argv0, args.command],
+            argv: [...pwshArgv, args.command],
             ...(workdir !== undefined ? { cwd: workdir } : {}),
             stdio: {
               stdin: 'ignore',
