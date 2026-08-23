@@ -118,14 +118,15 @@ big-fat-whale-maid-adaptive/
 - 执行形状：`wsl.exe -d <distro> [--cd <linuxCwd>] -e bash -lc <command>`；每次独立进程；输出有界；非零退出抛错。
 - 挂载时解析默认发行版：`config.distro` > Lxss 注册表默认 > `wsl.exe -l -q` 第一项；全部失败则**不注册 bash**（fail-open），绝不抛错。
 
-### 4.4 `env-probe.mjs` 接口
+### 4.4 `env-probe.mjs` 接口（v3）
 
-- 导出测试函数：`probeStatic(timeoutMs)`、`worldOf(cwd)`、`buildBrief(snapshot, cwd)`
-- `probeStatic`：platform + insideWsl（/proc/version + WSL_DISTRO_NAME）+ `wsl.exe -l -q` + Lxss 注册表默认发行版（Windows）；win32 上探测 Windows 母系统 PowerShell（pwsh.exe / powershell.exe）；Linux 上探测 pwsh / WSL 内 powershell.exe interop / wine。失败一律降级。
+- 导出测试函数：`probeStatic(timeoutMs)`（**async，返回 Promise**）、`worldOf(cwd)`、`buildBrief(snapshot, cwd, wslVariant = false)`
+- `probeStatic`：platform + insideWsl（/proc/version + WSL_DISTRO_NAME）+ `wsl.exe -l -q` + Lxss 注册表默认发行版（Windows）；win32 上探测 Windows 母系统 PowerShell（P4 扩展路径：Program Files 7 / 7-preview、每用户 Programs、WindowsApps 执行别名，5.1 兜底）；Linux 上探测 pwsh / WSL 内 powershell.exe interop / wine。失败一律降级。**全部异步**（`execFile` + `Promise.all`），挂载时探测不阻塞启动，`env_probe` 工具调用不阻塞事件循环。
 - `worldOf`：UNC → wsl 世界；`/…` → linux；`X:\…` → windows（附 `/mnt/x/…` 换算）。
-- pre-step 每会话注入一次简报（`source.kind = 'env-probe'`，Set 去重，异常静默跳过）。
-- `env_probe` 工具：无参数但必须 object-rooted JSON Schema（**勿改回 `{}`**）。
-- `pwsh` 工具：按探测结果注册——win32 上为 Windows 母系统 PowerShell（优先 `pwsh.exe`，兜底 `powershell.exe`）；非 win32 上 WSL 内优先 Linux 原生 pwsh，其次 `powershell.exe` interop。
+- `buildBrief` 第三参 `wslVariant`：为 true（`ctx.baseUrl` 含 `/wsl-`，即 dsh-wsl-workspace 变体）时，简报把 bash 描述为持久 shell、文件工具描述为 WSL 文件系统世界，避免误导模型。
+- pre-step 每会话注入一次简报（`source.kind = 'env-probe'`，Set 去重，异常静默跳过；等待挂载探测完成后注入）。
+- `env_probe` 工具：无参数但必须 object-rooted JSON Schema（**勿改回 `{}`**）；实测 bash/pwsh 两侧，冒烟并行执行。
+- `pwsh` 工具：按探测结果注册——win32 上为 Windows 母系统 PowerShell（优先 `pwsh.exe`，兜底 `powershell.exe`）；非 win32 上 WSL 内优先 Linux 原生 pwsh，其次 `powershell.exe` interop。**workdir 只接受 Windows 盘符路径**（`C:\…`），Linux/UNC 路径对 Windows PowerShell 进程不可靠，统一兜底到 `%SystemRoot%`（与 `wsl-bash` 同策略）。
 
 ---
 
@@ -138,6 +139,7 @@ big-fat-whale-maid-adaptive/
 | 挂载报缺失 `./wsl-bash.mjs` | 文件未复制 | 确认 5 个文件齐全 |
 | Windows 上 bash 调用失败 `terminal inspection is unsupported` | 模型拿到的是 PTY 持久 bash（native-persistent-shell 未被 win32 禁用） | 复核 disabled 表达式 |
 | bash 报 `workdir is not in any known world` | workdir 不是 UNC / Linux / 盘符三者之一 | 传入合法路径或让模型传绝对路径 |
+| pwsh 在 WSL 工作区里 spawn 失败 | 旧版把 Linux/UNC workdir 直接当 Windows 进程 cwd | 已修复（v3）：非盘符路径兜底 `%SystemRoot%`；命令内可用 `Set-Location` 切换目录 |
 | 首轮没有锚定、直接全量工具 | bootstrapTools 中某工具缺失触发 fail-open | 检查目标平台 bash / str_replace_editor 提供者 |
 | 简报缺失 | pre-step 注入异常被静默跳过 | 查 host 日志 env-probe 警告；`env_probe` 工具可手动复查 |
 

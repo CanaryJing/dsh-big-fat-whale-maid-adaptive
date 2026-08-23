@@ -2,13 +2,25 @@
  * env-probe — 大肥鱼女仆长 · 环境自适应模式的环境探测与双世界 shell 路由。
  *
  * 职责：
- *   1. 挂载时探测静态环境（宿主平台、是否 WSL 内、WSL 发行版、pwsh/wine 可用性）；
+ *   1. 探测静态环境（宿主平台、是否 WSL 内、WSL 发行版、pwsh/wine 可用性）；
  *   2. 每个会话第一次请求前注入一份「环境简报」，告诉模型 bash/pwsh/文件工具
  *      各自运行在哪个世界，以及两个世界之间的路径互转规则；
  *   3. 注册 env_probe 工具：随时复查环境，并实际冒烟测试两侧 shell；
  *   4. 按探测结果注册 pwsh 工具：win32 上为 Windows 母系统 PowerShell（优先
  *      pwsh.exe，兜底 powershell.exe）；非 Windows 宿主上为原生 Linux 的 pwsh
  *      或 WSL 内的 powershell.exe interop，让模型始终能触达 Windows 母系统。
+ *
+ * v3（2026-02 审查修复）：
+ *   - P1：pwsh 工具的 workdir 做 Windows 世界翻译——Linux/UNC 路径对
+ *         Windows PowerShell 进程不可靠，兜底到 %SystemRoot%（与 wsl-bash
+ *         同策略），绝不让 spawn 因 cwd 失败；
+ *   - P2：探测与冒烟测试全部改为异步（node:child_process execFile +
+ *         Promise.all），env_probe 工具调用不再同步阻塞事件循环；挂载探测
+ *         也改为异步，启动不再等待；
+ *   - P3：环境简报感知 `wsl-` 变体（ctx.baseUrl 含 /wsl-），变体下正确描述
+ *         bash 为 dsh-wsl-workspace 持久 shell、文件工具为 WSL 文件系统世界；
+ *   - P4：Windows PowerShell 探测扩展候选路径（Program Files 7 / 7-preview、
+ *         每用户 Programs、WindowsApps 执行别名），仍以 5.1 兜底。
  *
  * 设计约束：
  *   - 零外部依赖：用户 home 下的 preset 无法解析 harness 的 node_modules，
@@ -18,8 +30,11 @@
  *     （agent-instructions / skill-catalog），因此不会被锚定过滤器剥离。
  */
 
-import { execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
+import { promisify } from 'node:util'
+
+const execFileAsync = promisify(execFile)
 
 /** Cordis 插件名（loader 诊断用）。 */
 export const name = 'whale-maid-env-probe'
@@ -71,7 +86,10 @@ function linuxToUnc(distro, linuxPath) {
   return `\\\\wsl.localhost\\${distro}${segments === '' ? '' : `\\${segments}`}`
 }
 
-/** 判定一个工作目录属于哪个世界。 */
+/**
+ * 判定一个工作目录属于哪个世界。
+ * @returns {{ world: 'wsl'|'linux'|'windows'|'unknown', label: string, [key: string]: unknown }}
+ */
 export function worldOf(cwd) {
   const raw = typeof cwd === 'string' && cwd.length > 0 ? cwd : process.cwd()
   const unc = parseWslUnc(raw)
@@ -99,7 +117,7 @@ export function worldOf(cwd) {
   return { world: 'unknown', label: '未知世界', raw }
 }
 
-// ── 探测辅助 ───────────────────────────────────────────────────────────────
+// ── 探测辅助（全部异步，绝不阻塞事件循环）───────────────────────────────────
 
 function decodeExecOutput(buffer) {
   if (buffer === undefined || buffer === null) return ''
@@ -107,19 +125,19 @@ function decodeExecOutput(buffer) {
   return buf.includes(0) ? buf.toString('utf16le') : buf.toString('utf8')
 }
 
-function execCapture(argv, timeoutMs, options = {}) {
-  const out = execFileSync(argv[0], argv.slice(1), {
+async function execCapture(argv, timeoutMs, options = {}) {
+  const { stdout } = await execFileAsync(argv[0], argv.slice(1), {
     encoding: 'buffer',
     timeout: timeoutMs,
     windowsHide: true,
     ...options,
   })
-  return decodeExecOutput(out)
+  return decodeExecOutput(stdout)
 }
 
-function tryCapture(fn) {
+async function tryCapture(fn) {
   try {
-    const text = fn()
+    const text = await fn()
     return typeof text === 'string' ? text.trim() : ''
   } catch {
     return ''
@@ -127,46 +145,61 @@ function tryCapture(fn) {
 }
 
 /** 列出已安装的 WSL 发行版（wsl.exe -l -q）。 */
-function listDistros(timeoutMs) {
-  const text = tryCapture(() => execCapture(['wsl.exe', '-l', '-q'], timeoutMs))
+async function listDistros(timeoutMs) {
+  const text = await tryCapture(() => execCapture(['wsl.exe', '-l', '-q'], timeoutMs))
   return text.split(/\r?\n/).map((s) => s.trim()).filter((s) => s.length > 0 && !s.includes('\0'))
 }
 
 /** 读取用户默认发行版（Lxss 注册表；失败返回 undefined）。 */
-function defaultDistro(timeoutMs) {
-  const text = tryCapture(() => execCapture(['reg.exe', 'query', LXSS_KEY, '/v', 'DefaultDistribution'], timeoutMs))
+async function defaultDistro(timeoutMs) {
+  const text = await tryCapture(() => execCapture(['reg.exe', 'query', LXSS_KEY, '/v', 'DefaultDistribution'], timeoutMs))
   const guid = /DefaultDistribution\s+REG_SZ\s+(\{[0-9a-fA-F-]+\})/i.exec(text)?.[1]
   if (guid === undefined) return undefined
-  const name = tryCapture(() => execCapture(['reg.exe', 'query', `${LXSS_KEY}\\${guid}`, '/v', 'DistributionName'], timeoutMs))
+  const name = await tryCapture(() => execCapture(['reg.exe', 'query', `${LXSS_KEY}\\${guid}`, '/v', 'DistributionName'], timeoutMs))
   const distro = /DistributionName\s+REG_SZ\s+(.+)/i.exec(name)?.[1]?.trim()
   return distro === undefined || distro === '' ? undefined : distro
 }
 
 /** Linux 上探测某个可执行文件在 PATH 中的路径。 */
-function linuxWhich(cmd) {
-  const text = tryCapture(() => execCapture(['bash', '-lc', `command -v ${cmd} || true`], 8000))
+async function linuxWhich(cmd) {
+  const text = await tryCapture(() => execCapture(['bash', '-lc', `command -v ${cmd} || true`], 8000))
   const first = text.split(/\r?\n/).map((s) => s.trim()).find((s) => s.length > 0)
   return first === undefined || first === '' ? undefined : first
 }
 
-/** Windows 母系统 PowerShell 探测（win32 专用）：pwsh.exe 优先，powershell.exe 兜底。 */
+/**
+ * Windows 母系统 PowerShell 探测（win32 专用）：按「最新优先」顺序枚举常见
+ * 安装位置——Program Files 的 PowerShell 7、7-preview、每用户 Programs、
+ * WindowsApps 执行别名，最后兜底 Windows PowerShell 5.1。
+ */
 function detectWindowsPowerShell() {
-  const candidates = []
-  const programFiles = process.env.ProgramFiles
-  if (typeof programFiles === 'string' && programFiles.length > 0) {
-    candidates.push({
-      label: 'Windows 母系统 PowerShell（PowerShell 7，pwsh.exe）',
-      path: `${programFiles}\\PowerShell\\7\\pwsh.exe`,
-    })
-  }
   const systemRoot = process.env.SystemRoot
-  if (typeof systemRoot === 'string' && systemRoot.length > 0) {
-    candidates.push({
-      label: 'Windows 母系统 PowerShell（Windows PowerShell 5.1，powershell.exe）',
-      path: `${systemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`,
-    })
+  const programFiles = process.env.ProgramFiles
+  const localAppData = process.env.LOCALAPPDATA
+  const candidates = []
+  const push = (label, path) => {
+    if (typeof path === 'string' && path.length > 0) {
+      candidates.push({ label, path })
+    }
   }
+  if (typeof programFiles === 'string' && programFiles.length > 0) {
+    push('Windows 母系统 PowerShell（PowerShell 7，pwsh.exe）', `${programFiles}\\PowerShell\\7\\pwsh.exe`)
+    push('Windows 母系统 PowerShell（PowerShell 7 Preview，pwsh-preview.exe）', `${programFiles}\\PowerShell\\7-preview\\pwsh.exe`)
+  }
+  if (typeof localAppData === 'string' && localAppData.length > 0) {
+    push('Windows 母系统 PowerShell（PowerShell 7 每用户安装）', `${localAppData}\\Programs\\PowerShell\\7\\pwsh.exe`)
+    push('Windows 母系统 PowerShell（PowerShell 7 Preview 每用户安装）', `${localAppData}\\Programs\\PowerShell\\7-preview\\pwsh.exe`)
+    // Microsoft Store 安装的执行别名（0 字节 reparse point，existsSync 可命中）。
+    push('Windows 母系统 PowerShell（PowerShell 7，WindowsApps）', `${localAppData}\\Microsoft\\WindowsApps\\pwsh.exe`)
+    push('Windows 母系统 PowerShell（PowerShell 7 Preview，WindowsApps）', `${localAppData}\\Microsoft\\WindowsApps\\pwsh-preview.exe`)
+  }
+  if (typeof systemRoot === 'string' && systemRoot.length > 0) {
+    push('Windows 母系统 PowerShell（Windows PowerShell 5.1，powershell.exe）', `${systemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`)
+  }
+  const seen = new Set()
   for (const cand of candidates) {
+    if (seen.has(cand.path)) continue
+    seen.add(cand.path)
     try {
       if (existsSync(cand.path)) {
         return { label: cand.label, argv: [cand.path, '-NoProfile', '-Command'] }
@@ -182,15 +215,20 @@ function detectWindowsPowerShell() {
 function detectInsideWsl() {
   if (process.platform !== 'linux') return false
   if (process.env.WSL_DISTRO_NAME !== undefined && process.env.WSL_DISTRO_NAME !== '') return true
-  const version = tryCapture(() => readFileSync('/proc/version', 'utf8'))
-  return /microsoft|wsl/i.test(version)
+  try {
+    const version = readFileSync('/proc/version', 'utf8')
+    return /microsoft|wsl/i.test(version)
+  } catch {
+    return false
+  }
 }
 
 /**
- * 静态环境快照（挂载时探测一次，env_probe 工具每次调用时重新探测）。
- * 任何一项失败都降级，绝不抛错。
+ * 静态环境快照（异步探测）。env_probe 工具每次调用时重新探测；挂载时探测
+ * 一次供简报使用。任何一项失败都降级，绝不抛错。
+ * @returns {Promise<object>} snapshot
  */
-export function probeStatic(timeoutMs) {
+export async function probeStatic(timeoutMs) {
   const platform = process.platform
   const insideWsl = detectInsideWsl()
   const snapshot = {
@@ -209,18 +247,18 @@ export function probeStatic(timeoutMs) {
   }
 
   if (platform === 'win32') {
-    const distros = listDistros(timeoutMs)
+    const distros = await listDistros(timeoutMs)
     snapshot.wsl = {
       installed: distros.length > 0,
       distros,
-      defaultDistro: defaultDistro(timeoutMs) ?? distros[0],
+      defaultDistro: (await defaultDistro(timeoutMs)) ?? distros[0],
     }
-    // Windows 母系统 PowerShell：优先 PowerShell 7（pwsh.exe），兜底 Windows PowerShell 5.1。
+    // Windows 母系统 PowerShell：按最新优先枚举，5.1 兜底。
     snapshot.pwsh = detectWindowsPowerShell()
   } else {
     // 原生 Linux / WSL 内：探测 pwsh 与 Windows interop。
-    const pwshPath = linuxWhich('pwsh')
-    const interopPath = insideWsl ? linuxWhich('powershell.exe') : undefined
+    const pwshPath = await linuxWhich('pwsh')
+    const interopPath = insideWsl ? await linuxWhich('powershell.exe') : undefined
     if (pwshPath !== undefined) {
       snapshot.pwsh = {
         label: insideWsl ? `Linux 原生 PowerShell（${pwshPath}）` : `PowerShell for Linux（${pwshPath}）`,
@@ -232,7 +270,7 @@ export function probeStatic(timeoutMs) {
         argv: [interopPath, '-NoProfile', '-Command'],
       }
     }
-    const wine = linuxWhich('wine')
+    const wine = await linuxWhich('wine')
     if (wine !== undefined) snapshot.wine = { path: wine }
   }
   return snapshot
@@ -240,15 +278,40 @@ export function probeStatic(timeoutMs) {
 
 // ── 简报生成 ───────────────────────────────────────────────────────────────
 
-function shellRoutes(snapshot, world) {
+/**
+ * pwsh 是 Windows 母系统进程，进程 cwd 必须是 Windows 可寻址路径。
+ * - 盘符路径（C:\…）直接用；
+ * - WSL UNC / Linux 路径对 pwsh 不可靠（尤其 Windows PowerShell 5.1 与
+ *   未启动的发行版），一律兜底到 %SystemRoot%（与 wsl-bash 同策略），
+ *   绝不让 spawn 因 cwd 失败。
+ * @param {string|undefined} workdir 模型传入的 workdir 或会话 cwd。
+ * @returns {string|undefined} 可直接作为 Windows 进程 cwd 的路径。
+ */
+function windowsCwdFor(workdir) {
+  if (typeof workdir === 'string' && workdir.length > 0) {
+    if (isWindowsDrivePath(workdir)) return workdir
+    return process.env.SystemRoot ?? process.cwd()
+  }
+  return undefined
+}
+
+/**
+ * 工具世界路由文案。`wslVariant` 为 true 表示本预设以 `wsl-*` 变体运行
+ * （bash/文件工具由 dsh-wsl-workspace 提供，执行世界是 WSL）。
+ */
+function shellRoutes(snapshot, world, wslVariant = false) {
   if (snapshot.platform === 'win32') {
     const distro = world.world === 'wsl' ? world.distro : (snapshot.wsl.defaultDistro ?? '?')
     return {
-      bash: `bash  →  WSL 发行版「${distro}」内的 Linux bash（自包含 wsl.exe 调用，Linux 路径原生可用）`,
+      bash: wslVariant
+        ? `bash  →  WSL 发行版「${distro}」内的 Linux bash（dsh-wsl-workspace 持久 shell，Linux 路径原生可用）`
+        : `bash  →  WSL 发行版「${distro}」内的 Linux bash（自包含 wsl.exe 调用，Linux 路径原生可用）`,
       pwsh: snapshot.pwsh !== undefined
         ? `pwsh  →  ${snapshot.pwsh.label}（env-probe 已注册）`
         : 'pwsh  →  未检测到可用的 PowerShell，不可用',
-      files: 'read/write/edit/str_replace_editor  →  Windows 宿主文件系统（Windows 路径与 \\\\wsl.localhost\\\\<distro>\\\\… 均可）；WSL 侧也可直接交给 bash',
+      files: wslVariant
+        ? 'read/write/edit/str_replace_editor  →  WSL 文件系统世界（\\\\wsl.localhost\\\\<distro>\\\\… 与 Linux 路径均可；Windows 文件经 /mnt/<drive> 访问）'
+        : 'read/write/edit/str_replace_editor  →  Windows 宿主文件系统（Windows 路径与 \\\\wsl.localhost\\\\<distro>\\\\… 均可）；WSL 侧也可直接交给 bash',
       search: 'glob/grep  →  本平台未注册（Windows ripgrep 读不了 WSL 路径）；WSL 侧请用 bash 的 find/grep',
     }
   }
@@ -283,9 +346,12 @@ function pathRules(snapshot, world) {
   return lines
 }
 
-export function buildBrief(snapshot, cwd) {
+/**
+ * 生成环境简报。`wslVariant` 为 true 时按 `wsl-*` 变体的执行世界描述工具路由。
+ */
+export function buildBrief(snapshot, cwd, wslVariant = false) {
   const world = worldOf(cwd)
-  const routes = shellRoutes(snapshot, world)
+  const routes = shellRoutes(snapshot, world, wslVariant)
   const rules = pathRules(snapshot, world)
   const wslLine = snapshot.platform === 'win32'
     ? `WSL 状态：${snapshot.wsl.installed ? `已安装；发行版 [${snapshot.wsl.distros.join(', ') || '无'}]；默认 ${snapshot.wsl.defaultDistro ?? '?'}` : '未安装或不可用'}`
@@ -314,11 +380,11 @@ export function buildBrief(snapshot, cwd) {
   ].join('\n')
 }
 
-// ── 冒烟测试 ───────────────────────────────────────────────────────────────
+// ── 冒烟测试（异步）──────────────────────────────────────────────────────────
 
-function smokeCapture(argv, timeoutMs) {
+async function smokeCapture(argv, timeoutMs) {
   try {
-    const text = execCapture(argv, timeoutMs)
+    const text = await execCapture(argv, timeoutMs)
     return text.length > 0 ? text.slice(0, 4000) : '(无输出，退出码 0)'
   } catch (error) {
     const detail = error && error.stdout ? `\nstdout: ${String(error.stdout).slice(0, 500)}` : ''
@@ -327,7 +393,7 @@ function smokeCapture(argv, timeoutMs) {
 }
 
 /** 测试 bash 后端（Windows 宿主 → WSL bash；Linux 宿主 → 原生 bash）。 */
-function smokeBash(snapshot, timeoutMs) {
+async function smokeBash(snapshot, timeoutMs) {
   if (snapshot.platform === 'win32') {
     const distro = snapshot.wsl.defaultDistro
     if (distro === undefined) return 'WSL 无可用发行版，跳过 bash 冒烟测试'
@@ -340,7 +406,7 @@ function smokeBash(snapshot, timeoutMs) {
 }
 
 /** 测试 pwsh 后端（win32=Windows 母系统 PowerShell；非 win32=探测到的跨世界后端）。 */
-function smokePwsh(snapshot, timeoutMs) {
+async function smokePwsh(snapshot, timeoutMs) {
   if (snapshot.pwsh === undefined) return '未检测到可用的 PowerShell，跳过 pwsh 冒烟测试'
   return smokeCapture(
     [...snapshot.pwsh.argv, "'env_probe_pwsh_ok'; $PSVersionTable.PSVersion.ToString(); $env:OS"],
@@ -376,16 +442,40 @@ export function apply(ctx, config) {
       ? source.probeTimeoutMs
       : DEFAULT_TIMEOUT_MS
 
-  // 挂载时探测一次静态环境（失败降级，不抛错）。
-  const snapshot = probeStatic(probeTimeoutMs)
+  // 是否为 dsh-wsl-workspace 生成的 `wsl-*` 变体（baseUrl 指向 wsl- 目录）。
+  // 与 agent.cordis.yml 中 `/[\\/]wsl-/.test(baseUrl)` 自禁用用的是同一判定。
+  const isWslVariant = typeof ctx.baseUrl === 'string' && /[\\/]wsl-/.test(ctx.baseUrl)
 
-  /** 重新探测（env_probe 工具每次调用时刷新）。 */
-  const refresh = () => {
+  // 挂载后异步探测一次：不阻塞启动；简报注入与 pwsh 注册都会等待它完成。
+  let resolvedSnapshot = undefined
+  const probePromise = probeStatic(probeTimeoutMs)
+    .then((value) => {
+      resolvedSnapshot = value
+      return value
+    })
+    .catch((error) => {
+      const fallback = {
+        probedAt: Date.now(),
+        platform: process.platform,
+        platformLabel: String(process.platform),
+        insideWsl: false,
+        wsl: { installed: false, distros: [], defaultDistro: undefined },
+        pwsh: undefined,
+        wine: undefined,
+        probeError: error && error.message ? error.message : String(error),
+      }
+      resolvedSnapshot = fallback
+      return fallback
+    })
+
+  /** 重新探测（env_probe 工具每次调用时刷新；失败降级到最近一次快照）。 */
+  const refresh = async () => {
     try {
-      return probeStatic(probeTimeoutMs)
+      return await probeStatic(probeTimeoutMs)
     } catch (error) {
+      const base = resolvedSnapshot ?? (await probePromise)
       return {
-        ...snapshot,
+        ...base,
         probedAt: Date.now(),
         probeError: error && error.message ? error.message : String(error),
       }
@@ -400,9 +490,10 @@ export function apply(ctx, config) {
       if (decision.kind === 'reject') return decision
       const session = agent?.session
       if (session === undefined || briefed.has(session.id)) return decision
+      const snap = resolvedSnapshot ?? (await probePromise)
       briefed.add(session.id)
       const cwd = session.header?.cwd ?? process.cwd()
-      const text = buildBrief(snapshot, cwd)
+      const text = buildBrief(snap, cwd, isWslVariant)
       return {
         ...decision,
         messages: [
@@ -424,7 +515,7 @@ export function apply(ctx, config) {
     }
   })
 
-  // ── 2) env_probe 工具：复查环境 + 实测两侧 shell ───────────────────────
+  // ── 2) env_probe 工具：复查环境 + 实测两侧 shell（全异步，不阻塞）──────
   ctx.effect(() => {
     ctx.tools.register({
       name: 'env_probe',
@@ -433,18 +524,20 @@ export function apply(ctx, config) {
       parameters: toJsonSchema({}),
       output: textOutput,
       async execute(_args, exec) {
-        const fresh = refresh()
+        const fresh = await refresh()
         const cwd = exec?.agent?.session?.header?.cwd ?? process.cwd()
         const world = worldOf(cwd)
-        const routes = shellRoutes(fresh, world)
+        const routes = shellRoutes(fresh, world, isWslVariant)
         const smokeTimeout = Math.max(probeTimeoutMs, 15000)
-        const bashTest = smokeBash(fresh, smokeTimeout)
-        const pwshTest = smokePwsh(fresh, smokeTimeout)
+        const [bashTest, pwshTest] = await Promise.all([
+          smokeBash(fresh, smokeTimeout),
+          smokePwsh(fresh, smokeTimeout),
+        ])
         const wineLine = fresh.wine !== undefined
           ? `wine: ${fresh.wine.path}（Linux 母系统上的 Windows 兼容层）`
           : 'wine: 未检测到'
         const text = [
-          buildBrief(fresh, cwd),
+          buildBrief(fresh, cwd, isWslVariant),
           '— 实测结果 —',
           `bash 冒烟测试：\n${bashTest}`,
           `pwsh 冒烟测试：\n${pwshTest}`,
@@ -457,64 +550,70 @@ export function apply(ctx, config) {
   })
 
   // ── 3) 按探测结果注册 pwsh 工具（win32=Windows 母系统 PowerShell；非 win32=跨世界后端）──
-  if (snapshot.pwsh !== undefined) {
-    const pwshArgv = snapshot.pwsh.argv
-    const label = snapshot.pwsh.label
-    const description = snapshot.platform === 'win32'
+  ctx.effect(async () => {
+    const snap = await probePromise
+    if (snap.pwsh === undefined) return
+    const pwshArgv = snap.pwsh.argv
+    const label = snap.pwsh.label
+    const description = snap.platform === 'win32'
       ? `Run a PowerShell command on the Windows mother system. Backend: ${label}. ` +
         'Use it to operate the Windows host directly (registry, services, files, Git, etc.). ' +
         'Commands run in a fresh process; non-zero exit codes are reported as errors.'
       : `Run a PowerShell command. Backend: ${label}. ` +
         'Use it to reach the Windows mother system when running inside WSL (powershell.exe interop) ' +
         'or to drive PowerShell on native Linux. Commands run in a fresh process; non-zero exit codes are reported as errors.'
-    ctx.effect(() => {
-      ctx.tools.register({
-        name: 'pwsh',
-        description,
-        parameters: toJsonSchema({
-          command: { type: 'string', required: true, description: 'The PowerShell command to execute.' },
-          workdir: { type: 'string', description: 'Optional working directory; defaults to the session cwd.' },
-        }),
-        output: textOutput,
-        async execute(args, exec) {
-          const workdir =
-            typeof args.workdir === 'string' && args.workdir.length > 0
-              ? args.workdir
-              : exec?.agent?.session?.header?.cwd
-          const signal = exec?.signal
-          const handle = ctx.subprocess.spawn({
-            argv: [...pwshArgv, args.command],
-            ...(workdir !== undefined ? { cwd: workdir } : {}),
-            stdio: {
-              stdin: 'ignore',
-              stdout: { maxBytes: 64000 },
-              stderr: { maxBytes: 64000 },
-            },
-            ...(signal !== undefined ? { signal } : {}),
-            graceMs: 3000,
-          })
-          let outcome
-          try {
-            outcome = await handle.done
-          } catch (error) {
-            throw new Error(`pwsh spawn failed: ${String(error)}`)
-          }
-          let stdout = ''
-          let stderr = ''
-          try {
-            stdout = handle.collected.stdout.readFrom(0).text
-            stderr = handle.collected.stderr.readFrom(0).text
-          } catch {
-            // 某些后端可能没有 collect 读取器，容忍。
-          }
-          const text = [stdout, stderr].filter((part) => part.length > 0).join('\n')
-          const tail = text.length > 0 ? text : `exit code: ${outcome.exitCode} (no output)`
-          if (outcome.exitCode !== 0) {
-            throw new Error(tail)
-          }
-          return { text: tail }
+    ctx.tools.register({
+      name: 'pwsh',
+      description,
+      parameters: toJsonSchema({
+        command: { type: 'string', required: true, description: 'The PowerShell command to execute.' },
+        workdir: {
+          type: 'string',
+          description:
+            'Optional working directory; must be a Windows path (C:\\…). ' +
+            'WSL/Linux/UNC paths are not usable as the Windows PowerShell process cwd and fall back to %SystemRoot%.',
         },
-      })
+      }),
+      output: textOutput,
+      async execute(args, exec) {
+        const workdir =
+          typeof args.workdir === 'string' && args.workdir.length > 0
+            ? args.workdir
+            : exec?.agent?.session?.header?.cwd
+        const windowsCwd = windowsCwdFor(workdir)
+        const signal = exec?.signal
+        const handle = ctx.subprocess.spawn({
+          argv: [...pwshArgv, args.command],
+          ...(windowsCwd !== undefined ? { cwd: windowsCwd } : {}),
+          stdio: {
+            stdin: 'ignore',
+            stdout: { maxBytes: 64000 },
+            stderr: { maxBytes: 64000 },
+          },
+          ...(signal !== undefined ? { signal } : {}),
+          graceMs: 3000,
+        })
+        let outcome
+        try {
+          outcome = await handle.done
+        } catch (error) {
+          throw new Error(`pwsh spawn failed: ${String(error)}`)
+        }
+        let stdout = ''
+        let stderr = ''
+        try {
+          stdout = handle.collected.stdout.readFrom(0).text
+          stderr = handle.collected.stderr.readFrom(0).text
+        } catch {
+          // 某些后端可能没有 collect 读取器，容忍。
+        }
+        const text = [stdout, stderr].filter((part) => part.length > 0).join('\n')
+        const tail = text.length > 0 ? text : `exit code: ${outcome.exitCode} (no output)`
+        if (outcome.exitCode !== 0) {
+          throw new Error(tail)
+        }
+        return { text: tail }
+      },
     })
-  }
+  })
 }
