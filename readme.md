@@ -1,4 +1,4 @@
-# 大肥鱼女仆长 · 环境自适应模式(改编自风神插件)
+# 大肥鱼女仆长 · 环境自适应模式(改编自风神插件与明神插件)
 
 > DSH（DeepSeek Harness）自定义 Agent Preset 插件：首轮以 Linux 极简双工具「开智」锚定，自动探测宿主环境（原生 Linux / 原生 Windows / WSL 内外）与工作目录所属世界，`bash` 直达 WSL 发行版、`pwsh` 操作 Windows 母系统，晋升后开放全量工具，全程保持蓝发蓝瞳鲸鱼娘女仆长人设。
 >
@@ -75,12 +75,12 @@ big-fat-whale-maid-adaptive/
 
 ## 六、改编来源与致谢
 
-本项目改编自两个 DSH 社区插件（也就是标题中提到的「风神插件」），感谢原作者的优秀设计与公开分享：
+本项目改编自两位 DSH 社区插件作者的优秀作品——**风神**（yjh051108）的 dsh-routing-suite 与**明神**（xiaobright）的 dsh-anchored-standard，感谢他们的设计与公开分享：
 
 | 上游项目 | 作者 | 本项目借鉴 |
 |---|---|---|
-| [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard) | xiaobright | 首轮 Minimal 双工具锚定、两阶段晋升、抑制自动注入上下文的「开智」机制 |
-| [dsh-routing-suite](https://github.com/yjh051108/dsh-routing-suite) | yjh051108 | 工具按宿主 / 目录世界路由的思路、平台分派互斥与 `wsl-` 变体自禁用经验 |
+| [dsh-routing-suite](https://github.com/yjh051108/dsh-routing-suite) | **风神**（yjh051108） | 工具按宿主 / 目录世界路由的思路、平台分派互斥与 `wsl-` 变体自禁用经验 |
+| [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard) | **明神**（xiaobright） | 首轮 Minimal 双工具锚定、两阶段晋升、抑制自动注入上下文的「开智」机制 |
 
 详细改编说明与致谢见 [CREDITS.md](./CREDITS.md)。
 

@@ -2,27 +2,29 @@
 
 「大肥鱼女仆长 · 环境自适应模式」是基于以下两个 DSH（DeepSeek Harness）社区插件改编而来，特此向原作者致谢。
 
+> 「风神」「明神」分别是两位作者的名称：风神 = yjh051108（dsh-routing-suite），明神 = xiaobright（dsh-anchored-standard）。
+
 ---
-
-## dsh-anchored-standard
-
-- **作者**：xiaobright
-- **仓库**：https://github.com/xiaobright/dsh-anchored-standard
-- **项目描述**：Two-phase DeepSeek Harness preset: Minimal-aligned bootstrap, then full Standard tools (Project2 98/99)
-- **本项目借鉴的内容**：
-  - 首轮 Minimal 双工具锚定（`bash + str_replace_editor`）与两阶段晋升机制；
-  - 抑制自动注入上下文（`agent-instructions` / `skill-catalog`）的「开智」起步思路；
-  - 锚定工具缺失时 fail-open 安全降级的健壮性设计。
 
 ## dsh-routing-suite
 
-- **作者**：yjh051108
+- **作者**：风神（yjh051108）
 - **仓库**：https://github.com/yjh051108/dsh-routing-suite
 - **项目描述**：injector + router-standard kit: install the runtime injector first, then the task-aware reasoning-mode router preset (measured P1-P23)
 - **本项目借鉴的内容**：
   - 工具按宿主 / 目录世界路由的设计思路（`bash` 直达 WSL、`pwsh` 操作 Windows 母系统、文件工具随世界路由）；
   - 平台分派互斥与 `wsl-` 变体自禁用的经验，避免工具重复注册冲突；
   - 双世界路径互转与 shell 路由的实践参考。
+
+## dsh-anchored-standard
+
+- **作者**：明神（xiaobright）
+- **仓库**：https://github.com/xiaobright/dsh-anchored-standard
+- **项目描述**：Two-phase DeepSeek Harness preset: Minimal-aligned bootstrap, then full Standard tools (Project2 98/99)
+- **本项目借鉴的内容**：
+  - 首轮 Minimal 双工具锚定（`bash + str_replace_editor`）与两阶段晋升机制；
+  - 抑制自动注入上下文（`agent-instructions` / `skill-catalog`）的「开智」起步思路；
+  - 锚定工具缺失时 fail-open 安全降级的健壮性设计。
 
 ---
 
