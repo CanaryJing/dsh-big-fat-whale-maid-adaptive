@@ -75,7 +75,8 @@ big-fat-whale-maid-adaptive/
 ├── env-probe.mjs         # 环境探测插件（原创核心）
 ├── wsl-bash.mjs          # 自包含「bash 直达 WSL」工具插件（原创）
 ├── readme.md             # 插件作用说明（给人看）
-└── AIreadme.md           # 本文件：安装方法说明（给 AI / 维护者看）
+├── AIreadme.md           # 本文件：安装方法说明（给 AI / 维护者看）
+└── CREDITS.md            # 改编来源与致谢（上游插件）
 ```
 
 ### 4.1 `agent.cordis.yml` 顶层行（按注册顺序）

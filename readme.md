@@ -56,7 +56,8 @@ big-fat-whale-maid-adaptive/
 ├── env-probe.mjs         # 环境探测 + 简报注入 + env_probe/pwsh 工具
 ├── wsl-bash.mjs          # 自包含的「bash 直达 WSL」工具（wsl.exe）
 ├── readme.md             # 本文件：插件作用说明（给人看）
-└── AIreadme.md           # 安装方法说明（给 AI / 维护者看）
+├── AIreadme.md           # 安装方法说明（给 AI / 维护者看）
+└── CREDITS.md            # 改编来源与致谢（上游插件）
 ```
 
 ---
@@ -72,6 +73,19 @@ big-fat-whale-maid-adaptive/
 
 ---
 
-## 六、License
+## 六、改编来源与致谢
+
+本项目改编自两个 DSH 社区插件，感谢原作者的优秀设计与公开分享：
+
+| 上游项目 | 作者 | 本项目借鉴 |
+|---|---|---|
+| [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard) | xiaobright | 首轮 Minimal 双工具锚定、两阶段晋升、抑制自动注入上下文的「开智」机制 |
+| [dsh-routing-suite](https://github.com/yjh051108/dsh-routing-suite) | yjh051108 | 工具按宿主 / 目录世界路由的思路、平台分派互斥与 `wsl-` 变体自禁用经验 |
+
+详细改编说明与致谢见 [CREDITS.md](./CREDITS.md)。
+
+---
+
+## 七、License
 
 本项目仅供学习与个人使用，欢迎 fork / PR 改进。使用时请保留作者署名与说明文档。
