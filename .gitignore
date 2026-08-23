@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Node
+node_modules/
+*.log
+
+# 临时文件
+*.tmp
+*.bak
