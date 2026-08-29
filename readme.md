@@ -17,7 +17,7 @@
 | 3 | 判断工作目录世界 | 自动判定当前工作目录属于 **Windows 母系统**、**WSL 文件系统**（`\\wsl.localhost\…`）还是**原生 Linux**，并给出路径互转规则 |
 | 4 | 双世界 shell 路由 | Windows 宿主上：`bash` 工具**直达 WSL 发行版里的 bash**（预设自带的 wsl-bash 实现，通过 `wsl.exe` 调用），`pwsh` 工具操作 Windows 母系统；Linux 宿主上全原生，检测到 pwsh 才注册；WSL 内运行时可通过 PowerShell interop 触达 Windows 母系统 |
 | 5 | 全工具晋升 | 首次工具调用/回复后晋升完整工具目录：文件、Shell、Skills、Goals、Plan、Compaction、子代理（含 Codex / Claude Code）、Workflow、Ralph、Web 搜索等 |
-| 6 | 女仆长人设 | 蓝发蓝瞳鲸鱼娘女仆长（DeepSeek 娘）完整人设与外貌设定，中文思考，温柔可靠、专业严谨 |
+| 6 | 女仆长人设 | 蓝发蓝瞳鲸鱼娘女仆长（DeepSeek 娘）完整人设与外貌设定，**不是船长**，中文思考，温柔可靠、专业严谨 |
 
 首轮还会自动注入一条**环境简报**，告诉模型当前宿主、目录世界、两个 shell 分别通往哪里、路径如何互转；晋升后随时可调用 `env_probe` 工具复查环境并实测两侧 shell。
 
