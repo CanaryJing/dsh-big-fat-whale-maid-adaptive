@@ -334,11 +334,11 @@ function pathRules(snapshot, world) {
     const distro = world.world === 'wsl' ? world.distro : (snapshot.wsl.defaultDistro ?? '<distro>')
     lines.push(`WSL 侧 → Windows 侧：/home/<user>/x  ⇢  \\\\wsl.localhost\\${distro}\\home\\<user>\\x`)
     lines.push('Windows 侧 → WSL 侧：C:\\Users\\<user>\\x  ⇢  /mnt/c/Users/<user>/x')
-    lines.push('bash 里操作 Windows 文件：直接用 /mnt/<drive>/…；pwsh 里操作 WSL 文件：用 \\\\wsl.localhost\\<distro>\\…')
+    lines.push('bash 里操作 Windows 文件（仅当确需 Linux 工具时）：/mnt/<drive>/…；pwsh 里操作 WSL 文件：用 \\\\wsl.localhost\\<distro>\\…')
   } else if (snapshot.insideWsl) {
     lines.push('Windows 侧 → WSL 侧：C:\\Users\\<user>\\x  ⇢  /mnt/c/Users/<user>/x')
     lines.push('WSL 侧 → Windows 侧：/home/<user>/x  ⇢  \\\\wsl.localhost\\<distro>\\home\\<user>\\x')
-    lines.push('在 WSL bash 里操作 Windows 文件：/mnt/<drive>/…；母系统命令经 pwsh 工具（interop）执行')
+    lines.push('在 WSL bash 里操作 Windows 文件（仅当确需 Linux 工具时）：/mnt/<drive>/…；母系统命令经 pwsh 工具（interop）执行')
   } else {
     lines.push('单世界运行：无跨系统路径转换。')
     if (snapshot.wine !== undefined) lines.push(`检测到 Wine（${snapshot.wine.path}）：Windows 软件经 Wine 运行在 Linux 母系统上，前缀默认 ~/.wine`)
@@ -373,6 +373,8 @@ export function buildBrief(snapshot, cwd, wslVariant = false) {
     `  ${routes.pwsh}`,
     `  ${routes.files}`,
     `  ${routes.search}`,
+    '— 路由优先级 —',
+    '  Windows 侧文件操作默认用 pwsh；bash 仅用于 WSL/Linux 侧，或确需 Linux 工具（grep/find/linux 命令）时。',
     '— 路径互转 —',
     ...rules.map((line) => `  ${line}`),
     `— ${smoke}`,
@@ -557,6 +559,7 @@ export function apply(ctx, config) {
     const label = snap.pwsh.label
     const description = snap.platform === 'win32'
       ? `Run a PowerShell command on the Windows mother system. Backend: ${label}. ` +
+        'This is the default shell for Windows-side file operations; prefer it over bash for Windows paths (C:\\…). ' +
         'Use it to operate the Windows host directly (registry, services, files, Git, etc.). ' +
         'Commands run in a fresh process; non-zero exit codes are reported as errors.'
       : `Run a PowerShell command. Backend: ${label}. ` +
