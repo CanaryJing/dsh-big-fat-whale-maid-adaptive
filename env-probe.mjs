@@ -96,25 +96,25 @@ export function worldOf(cwd) {
   if (unc !== null) {
     return {
       world: 'wsl',
-      label: 'WSL 文件系统',
+      label: 'WSL fs',
       distro: unc.distro,
       linuxPath: unc.linuxPath,
       raw,
     }
   }
   if (isAbsoluteLinuxPath(raw)) {
-    return { world: 'linux', label: '原生 Linux 文件系统', linuxPath: raw, raw }
+    return { world: 'linux', label: 'native Linux fs', linuxPath: raw, raw }
   }
   if (isWindowsDrivePath(raw)) {
     return {
       world: 'windows',
-      label: 'Windows 母系统文件系统',
+      label: 'Windows fs',
       path: raw,
       mntPath: windowsToMntPath(raw),
       raw,
     }
   }
-  return { world: 'unknown', label: '未知世界', raw }
+  return { world: 'unknown', label: 'unknown', raw }
 }
 
 // ── 探测辅助（全部异步，绝不阻塞事件循环）───────────────────────────────────
@@ -183,18 +183,18 @@ function detectWindowsPowerShell() {
     }
   }
   if (typeof programFiles === 'string' && programFiles.length > 0) {
-    push('Windows 母系统 PowerShell（PowerShell 7，pwsh.exe）', `${programFiles}\\PowerShell\\7\\pwsh.exe`)
-    push('Windows 母系统 PowerShell（PowerShell 7 Preview，pwsh-preview.exe）', `${programFiles}\\PowerShell\\7-preview\\pwsh.exe`)
+    push('PowerShell 7 (pwsh.exe)', `${programFiles}\\PowerShell\\7\\pwsh.exe`)
+    push('PowerShell 7 Preview (pwsh-preview.exe)', `${programFiles}\\PowerShell\\7-preview\\pwsh.exe`)
   }
   if (typeof localAppData === 'string' && localAppData.length > 0) {
-    push('Windows 母系统 PowerShell（PowerShell 7 每用户安装）', `${localAppData}\\Programs\\PowerShell\\7\\pwsh.exe`)
-    push('Windows 母系统 PowerShell（PowerShell 7 Preview 每用户安装）', `${localAppData}\\Programs\\PowerShell\\7-preview\\pwsh.exe`)
+    push('PowerShell 7 (per-user)', `${localAppData}\\Programs\\PowerShell\\7\\pwsh.exe`)
+    push('PowerShell 7 Preview (per-user)', `${localAppData}\\Programs\\PowerShell\\7-preview\\pwsh.exe`)
     // Microsoft Store 安装的执行别名（0 字节 reparse point，existsSync 可命中）。
-    push('Windows 母系统 PowerShell（PowerShell 7，WindowsApps）', `${localAppData}\\Microsoft\\WindowsApps\\pwsh.exe`)
-    push('Windows 母系统 PowerShell（PowerShell 7 Preview，WindowsApps）', `${localAppData}\\Microsoft\\WindowsApps\\pwsh-preview.exe`)
+    push('PowerShell 7 (WindowsApps)', `${localAppData}\\Microsoft\\WindowsApps\\pwsh.exe`)
+    push('PowerShell 7 Preview (WindowsApps)', `${localAppData}\\Microsoft\\WindowsApps\\pwsh-preview.exe`)
   }
   if (typeof systemRoot === 'string' && systemRoot.length > 0) {
-    push('Windows 母系统 PowerShell（Windows PowerShell 5.1，powershell.exe）', `${systemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`)
+    push('Windows PowerShell 5.1 (powershell.exe)', `${systemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`)
   }
   const seen = new Set()
   for (const cand of candidates) {
@@ -203,6 +203,45 @@ function detectWindowsPowerShell() {
     try {
       if (existsSync(cand.path)) {
         return { label: cand.label, argv: [cand.path, '-NoProfile', '-Command'] }
+      }
+    } catch {
+      // 路径含非法字符等极端情况：跳过该候选。
+    }
+  }
+  return undefined
+}
+
+/**
+ * Windows 母系统 Git Bash 探测（win32 专用）：按常见安装位置枚举——
+ * Program Files、Program Files (x86)、每用户 Programs。Git Bash 是 Windows
+ * 侧默认 shell，探测失败时 Windows 侧回退到 pwsh。
+ */
+function detectGitBash() {
+  const programFiles = process.env.ProgramFiles
+  const programFilesX86 = process.env['ProgramFiles(x86)']
+  const localAppData = process.env.LOCALAPPDATA
+  const candidates = []
+  const push = (label, path) => {
+    if (typeof path === 'string' && path.length > 0) {
+      candidates.push({ label, path })
+    }
+  }
+  if (typeof programFiles === 'string' && programFiles.length > 0) {
+    push('Git Bash (Program Files)', `${programFiles}\\Git\\bin\\bash.exe`)
+  }
+  if (typeof programFilesX86 === 'string' && programFilesX86.length > 0) {
+    push('Git Bash (Program Files x86)', `${programFilesX86}\\Git\\bin\\bash.exe`)
+  }
+  if (typeof localAppData === 'string' && localAppData.length > 0) {
+    push('Git Bash (per-user)', `${localAppData}\\Programs\\Git\\bin\\bash.exe`)
+  }
+  const seen = new Set()
+  for (const cand of candidates) {
+    if (seen.has(cand.path)) continue
+    seen.add(cand.path)
+    try {
+      if (existsSync(cand.path)) {
+        return { label: cand.label, argv: [cand.path, '-lc'] }
       }
     } catch {
       // 路径含非法字符等极端情况：跳过该候选。
@@ -235,13 +274,14 @@ export async function probeStatic(timeoutMs) {
     probedAt: Date.now(),
     platform,
     platformLabel:
-      platform === 'win32' ? '原生 Windows'
-      : platform === 'linux' && insideWsl ? 'WSL 内（Linux 寄宿于 Windows）'
-      : platform === 'linux' ? '原生 Linux'
+      platform === 'win32' ? 'native Windows'
+      : platform === 'linux' && insideWsl ? 'inside WSL (Linux on Windows)'
+      : platform === 'linux' ? 'native Linux'
       : platform === 'darwin' ? 'macOS'
       : String(platform),
     insideWsl,
     wsl: { installed: false, distros: [], defaultDistro: undefined },
+    gitbash: undefined, // { label, argv } Git Bash 后端（win32=Windows 母系统；Windows 侧默认 shell）
     pwsh: undefined, // { label, argv } 可用 PowerShell 后端（win32=Windows 母系统；非 win32=跨到 Windows 的 interop）
     wine: undefined,
   }
@@ -253,6 +293,8 @@ export async function probeStatic(timeoutMs) {
       distros,
       defaultDistro: (await defaultDistro(timeoutMs)) ?? distros[0],
     }
+    // Windows 母系统 Git Bash：Windows 侧默认 shell；探测失败则回退 pwsh。
+    snapshot.gitbash = detectGitBash()
     // Windows 母系统 PowerShell：按最新优先枚举，5.1 兜底。
     snapshot.pwsh = detectWindowsPowerShell()
   } else {
@@ -261,12 +303,12 @@ export async function probeStatic(timeoutMs) {
     const interopPath = insideWsl ? await linuxWhich('powershell.exe') : undefined
     if (pwshPath !== undefined) {
       snapshot.pwsh = {
-        label: insideWsl ? `Linux 原生 PowerShell（${pwshPath}）` : `PowerShell for Linux（${pwshPath}）`,
+        label: `PowerShell for Linux (${pwshPath})`,
         argv: [pwshPath, '-NoProfile', '-Command'],
       }
     } else if (interopPath !== undefined) {
       snapshot.pwsh = {
-        label: `Windows 母系统 PowerShell（WSL interop，${interopPath}）`,
+        label: `Windows PowerShell (WSL interop, ${interopPath})`,
         argv: [interopPath, '-NoProfile', '-Command'],
       }
     }
@@ -304,27 +346,30 @@ function shellRoutes(snapshot, world, wslVariant = false) {
     const distro = world.world === 'wsl' ? world.distro : (snapshot.wsl.defaultDistro ?? '?')
     return {
       bash: wslVariant
-        ? `bash  →  WSL 发行版「${distro}」内的 Linux bash（dsh-wsl-workspace 持久 shell，Linux 路径原生可用）`
-        : `bash  →  WSL 发行版「${distro}」内的 Linux bash（自包含 wsl.exe 调用，Linux 路径原生可用）`,
+        ? `bash -> WSL "${distro}" Linux bash (dsh-wsl-workspace persistent shell; native Linux paths)`
+        : `bash -> WSL "${distro}" Linux bash (self-contained wsl.exe; native Linux paths)`,
+      gitbash: snapshot.gitbash !== undefined
+        ? `gitbash -> ${snapshot.gitbash.label} (Windows-side DEFAULT shell)`
+        : 'gitbash -> not found (Windows ops fall back to pwsh)',
       pwsh: snapshot.pwsh !== undefined
-        ? `pwsh  →  ${snapshot.pwsh.label}（env-probe 已注册）`
-        : 'pwsh  →  未检测到可用的 PowerShell，不可用',
+        ? `pwsh -> ${snapshot.pwsh.label}${snapshot.gitbash !== undefined ? ' (Windows-side fallback)' : ' (Windows-side default)'}`
+        : 'pwsh -> not found',
       files: wslVariant
-        ? 'read/write/edit/str_replace_editor  →  WSL 文件系统世界（\\\\wsl.localhost\\\\<distro>\\\\… 与 Linux 路径均可；Windows 文件经 /mnt/<drive> 访问）'
-        : 'read/write/edit/str_replace_editor  →  Windows 宿主文件系统（Windows 路径与 \\\\wsl.localhost\\\\<distro>\\\\… 均可）；WSL 侧也可直接交给 bash',
-      search: 'glob/grep  →  本平台未注册（Windows ripgrep 读不了 WSL 路径）；WSL 侧请用 bash 的 find/grep',
+        ? 'read/write/edit/str_replace_editor -> WSL fs world (\\\\wsl.localhost\\\\<distro>\\\\… and Linux paths; Windows files via /mnt/<drive>)'
+        : 'read/write/edit/str_replace_editor -> host fs (Windows paths and \\\\wsl.localhost\\\\<distro>\\\\…); WSL side via bash',
+      search: 'glob/grep -> not registered (Windows ripgrep cannot read WSL paths); use bash find/grep',
     }
   }
   const pwsh = snapshot.pwsh !== undefined
-    ? `pwsh  →  ${snapshot.pwsh.label}（env-probe 已注册）`
-    : 'pwsh  →  未检测到可用的 PowerShell，不可用'
+    ? `pwsh -> ${snapshot.pwsh.label}`
+    : 'pwsh -> not found'
   return {
     bash: snapshot.insideWsl
-      ? `bash  →  当前 WSL 发行版的原生 Linux bash（宿主即 Linux）`
-      : 'bash  →  宿主机原生 Linux bash',
+      ? 'bash -> native Linux bash (inside WSL)'
+      : 'bash -> native Linux bash',
     pwsh,
-    files: 'read/write/edit/str_replace_editor/glob/grep  →  原生 Linux 文件系统世界',
-    search: 'glob/grep  →  Linux 文件系统原生可用',
+    files: 'read/write/edit/str_replace_editor/glob/grep -> native Linux fs',
+    search: 'glob/grep -> native Linux fs',
   }
 }
 
@@ -332,16 +377,16 @@ function pathRules(snapshot, world) {
   const lines = []
   if (snapshot.platform === 'win32') {
     const distro = world.world === 'wsl' ? world.distro : (snapshot.wsl.defaultDistro ?? '<distro>')
-    lines.push(`WSL 侧 → Windows 侧：/home/<user>/x  ⇢  \\\\wsl.localhost\\${distro}\\home\\<user>\\x`)
-    lines.push('Windows 侧 → WSL 侧：C:\\Users\\<user>\\x  ⇢  /mnt/c/Users/<user>/x')
-    lines.push('bash 里操作 Windows 文件（仅当确需 Linux 工具时）：/mnt/<drive>/…；pwsh 里操作 WSL 文件：用 \\\\wsl.localhost\\<distro>\\…')
+    lines.push(`WSL->Win: /home/<user>/x = \\\\wsl.localhost\\${distro}\\home\\<user>\\x`)
+    lines.push('Win->WSL: C:\\Users\\<user>\\x = /mnt/c/Users/<user>/x')
+    lines.push('bash on Windows files (Linux tools only): /mnt/<drive>/…; gitbash/pwsh on WSL files: \\\\wsl.localhost\\<distro>\\…')
   } else if (snapshot.insideWsl) {
-    lines.push('Windows 侧 → WSL 侧：C:\\Users\\<user>\\x  ⇢  /mnt/c/Users/<user>/x')
-    lines.push('WSL 侧 → Windows 侧：/home/<user>/x  ⇢  \\\\wsl.localhost\\<distro>\\home\\<user>\\x')
-    lines.push('在 WSL bash 里操作 Windows 文件（仅当确需 Linux 工具时）：/mnt/<drive>/…；母系统命令经 pwsh 工具（interop）执行')
+    lines.push('Win->WSL: C:\\Users\\<user>\\x = /mnt/c/Users/<user>/x')
+    lines.push('WSL->Win: /home/<user>/x = \\\\wsl.localhost\\<distro>\\home\\<user>\\x')
+    lines.push('bash on Windows files (Linux tools only): /mnt/<drive>/…; Windows commands via pwsh (interop)')
   } else {
-    lines.push('单世界运行：无跨系统路径转换。')
-    if (snapshot.wine !== undefined) lines.push(`检测到 Wine（${snapshot.wine.path}）：Windows 软件经 Wine 运行在 Linux 母系统上，前缀默认 ~/.wine`)
+    lines.push('single world: no cross-system path conversion')
+    if (snapshot.wine !== undefined) lines.push(`wine: ${snapshot.wine.path} (Windows apps on Linux, prefix ~/.wine)`)
   }
   return lines
 }
@@ -354,31 +399,34 @@ export function buildBrief(snapshot, cwd, wslVariant = false) {
   const routes = shellRoutes(snapshot, world, wslVariant)
   const rules = pathRules(snapshot, world)
   const wslLine = snapshot.platform === 'win32'
-    ? `WSL 状态：${snapshot.wsl.installed ? `已安装；发行版 [${snapshot.wsl.distros.join(', ') || '无'}]；默认 ${snapshot.wsl.defaultDistro ?? '?'}` : '未安装或不可用'}`
+    ? `WSL: ${snapshot.wsl.installed ? `installed [${snapshot.wsl.distros.join(', ') || 'none'}], default ${snapshot.wsl.defaultDistro ?? '?'}` : 'not installed'}`
     : snapshot.insideWsl
-      ? `WSL 发行版：${process.env.WSL_DISTRO_NAME ?? '未知'}（寄宿于 Windows 母系统）`
-      : 'WSL 状态：不适用（原生 Linux 宿主）'
+      ? `WSL distro: ${process.env.WSL_DISTRO_NAME ?? 'unknown'} (hosted on Windows)`
+      : 'WSL: n/a (native Linux host)'
   const smoke = snapshot.platform === 'win32'
-    ? "建议首轮用 bash 冒烟验证：uname -srm; echo $0; pwd; ls /mnt/c >/dev/null 2>&1 && echo drvfs-ok"
-    : "建议首轮用 bash 冒烟验证：uname -srm; echo $0; pwd"
+    ? 'smoke: bash: uname -srm; echo $0; pwd; ls /mnt/c >/dev/null 2>&1 && echo drvfs-ok'
+    : 'smoke: bash: uname -srm; echo $0; pwd'
+  const routingLine = snapshot.platform === 'win32'
+    ? 'routing: Windows ops -> gitbash (fallback pwsh); bash -> WSL/Linux only'
+    : 'routing: bash -> native Linux; pwsh optional'
+  const gitbashLine = routes.gitbash !== undefined ? `  ${routes.gitbash}` : null
 
   return [
-    '【环境简报 · 大肥鱼女仆长自动探测】',
-    `宿主系统：${snapshot.platformLabel}（${snapshot.platform}）`,
-    `当前工作目录：${world.raw}`,
-    `工作目录世界：${world.label}`,
+    '[ENV] whale-maid auto-probe',
+    `host: ${snapshot.platformLabel} (${snapshot.platform})`,
+    `cwd: ${world.raw} (${world.label})`,
     wslLine,
-    '— 工具世界路由 —',
+    'shells:',
     `  ${routes.bash}`,
+    ...(gitbashLine !== null ? [gitbashLine] : []),
     `  ${routes.pwsh}`,
     `  ${routes.files}`,
     `  ${routes.search}`,
-    '— 路由优先级 —',
-    '  Windows 侧文件操作默认用 pwsh；bash 仅用于 WSL/Linux 侧，或确需 Linux 工具（grep/find/linux 命令）时。',
-    '— 路径互转 —',
+    routingLine,
+    'paths:',
     ...rules.map((line) => `  ${line}`),
-    `— ${smoke}`,
-    '提升后随时可调用 env_probe 工具复查环境并实测两侧 shell。',
+    smoke,
+    'env_probe tool re-checks env + smoke-tests shells anytime.',
   ].join('\n')
 }
 
@@ -398,7 +446,7 @@ async function smokeCapture(argv, timeoutMs) {
 async function smokeBash(snapshot, timeoutMs) {
   if (snapshot.platform === 'win32') {
     const distro = snapshot.wsl.defaultDistro
-    if (distro === undefined) return 'WSL 无可用发行版，跳过 bash 冒烟测试'
+    if (distro === undefined) return 'no WSL distro available, bash smoke test skipped'
     return smokeCapture(
       ['wsl.exe', '-d', distro, '-e', 'bash', '-lc', 'echo env_probe_bash_ok; uname -srm; echo shell=$0; pwd'],
       timeoutMs,
@@ -409,9 +457,18 @@ async function smokeBash(snapshot, timeoutMs) {
 
 /** 测试 pwsh 后端（win32=Windows 母系统 PowerShell；非 win32=探测到的跨世界后端）。 */
 async function smokePwsh(snapshot, timeoutMs) {
-  if (snapshot.pwsh === undefined) return '未检测到可用的 PowerShell，跳过 pwsh 冒烟测试'
+  if (snapshot.pwsh === undefined) return 'no PowerShell available, pwsh smoke test skipped'
   return smokeCapture(
     [...snapshot.pwsh.argv, "'env_probe_pwsh_ok'; $PSVersionTable.PSVersion.ToString(); $env:OS"],
+    timeoutMs,
+  )
+}
+
+/** 测试 gitbash 后端（win32=Windows 母系统 Git Bash）。 */
+async function smokeGitBash(snapshot, timeoutMs) {
+  if (snapshot.gitbash === undefined) return 'gitbash not found, skipped'
+  return smokeCapture(
+    [...snapshot.gitbash.argv, 'echo env_probe_gitbash_ok; uname -srm; echo shell=$0; pwd'],
     timeoutMs,
   )
 }
@@ -522,7 +579,7 @@ export function apply(ctx, config) {
     ctx.tools.register({
       name: 'env_probe',
       description:
-        '重新探测当前运行环境并实测两侧 shell：宿主系统（原生 Linux / 原生 Windows / WSL 内外）、工作目录所属世界（Windows 母系统 / WSL 文件系统 / 原生 Linux）、WSL 发行版、bash 与 pwsh 的实际调用结果、路径互转规则。',
+        'Re-probe the runtime environment and smoke-test both shells: host OS (native Linux / native Windows / inside WSL), cwd world (Windows / WSL fs / native Linux), WSL distros, actual bash/gitbash/pwsh invocation results, and path conversion rules.',
       parameters: toJsonSchema({}),
       output: textOutput,
       async execute(_args, exec) {
@@ -531,27 +588,97 @@ export function apply(ctx, config) {
         const world = worldOf(cwd)
         const routes = shellRoutes(fresh, world, isWslVariant)
         const smokeTimeout = Math.max(probeTimeoutMs, 15000)
-        const [bashTest, pwshTest] = await Promise.all([
+        const [bashTest, gitbashTest, pwshTest] = await Promise.all([
           smokeBash(fresh, smokeTimeout),
+          smokeGitBash(fresh, smokeTimeout),
           smokePwsh(fresh, smokeTimeout),
         ])
         const wineLine = fresh.wine !== undefined
-          ? `wine: ${fresh.wine.path}（Linux 母系统上的 Windows 兼容层）`
-          : 'wine: 未检测到'
+          ? `wine: ${fresh.wine.path} (Windows compat layer on Linux)`
+          : 'wine: not found'
         const text = [
           buildBrief(fresh, cwd, isWslVariant),
-          '— 实测结果 —',
-          `bash 冒烟测试：\n${bashTest}`,
-          `pwsh 冒烟测试：\n${pwshTest}`,
+          'smoke tests:',
+          `bash: ${bashTest}`,
+          `gitbash: ${gitbashTest}`,
+          `pwsh: ${pwshTest}`,
           wineLine,
-          `工具世界路由：\n  ${routes.bash}\n  ${routes.pwsh}\n  ${routes.files}`,
-        ].join('\n\n')
+        ].join('\n')
         return { text }
       },
     })
   })
 
-  // ── 3) 按探测结果注册 pwsh 工具（win32=Windows 母系统 PowerShell；非 win32=跨世界后端）──
+  // ── 3) 按探测结果注册 gitbash 工具（win32=Windows 母系统 Git Bash；Windows 侧默认 shell）──
+  ctx.effect(async () => {
+    const snap = await probePromise
+    if (snap.gitbash === undefined) return
+    const gitbashArgv = snap.gitbash.argv
+    const label = snap.gitbash.label
+    ctx.tools.register({
+      name: 'gitbash',
+      description: [
+        `Run commands in Git Bash on the Windows mother system. Backend: ${label}.`,
+        'This is the DEFAULT shell for Windows-side file operations; prefer it over pwsh for Windows paths (C:\\…).',
+        'Use it to operate the Windows host directly (files, Git, shell scripts, mingw toolchain, etc.).',
+        'Each call runs a fresh bash -lc shell (state does NOT persist across calls).',
+        'Windows paths are native here (C:\\…); inside the shell they appear as /c/… (MSYS2 style, NOT /mnt/c).',
+        'Commands run in a fresh process; non-zero exit codes are reported as errors.',
+      ].join('\n'),
+      parameters: toJsonSchema({
+        command: { type: 'string', required: true, description: 'The bash command to execute (bash -lc string domain, Windows world).' },
+        workdir: {
+          type: 'string',
+          description:
+            'Optional working directory; must be a Windows path (C:\\…). ' +
+            'WSL/Linux/UNC paths are not usable as the Git Bash process cwd and fall back to %SystemRoot%.',
+        },
+      }),
+      output: textOutput,
+      async execute(args, exec) {
+        const workdir =
+          typeof args.workdir === 'string' && args.workdir.length > 0
+            ? args.workdir
+            : exec?.agent?.session?.header?.cwd
+        const windowsCwd = windowsCwdFor(workdir)
+        const signal = exec?.signal
+        const handle = ctx.subprocess.spawn({
+          argv: [...gitbashArgv, args.command],
+          ...(windowsCwd !== undefined ? { cwd: windowsCwd } : {}),
+          stdio: {
+            stdin: 'ignore',
+            stdout: { maxBytes: 64000 },
+            stderr: { maxBytes: 64000 },
+          },
+          env: { NO_COLOR: '1', TERM: 'dumb', PAGER: 'cat', GIT_PAGER: 'cat' },
+          ...(signal !== undefined ? { signal } : {}),
+          graceMs: 3000,
+        })
+        let outcome
+        try {
+          outcome = await handle.done
+        } catch (error) {
+          throw new Error(`gitbash spawn failed: ${String(error)}`)
+        }
+        let stdout = ''
+        let stderr = ''
+        try {
+          stdout = handle.collected.stdout.readFrom(0).text
+          stderr = handle.collected.stderr.readFrom(0).text
+        } catch {
+          // 某些后端可能没有 collect 读取器，容忍。
+        }
+        const text = [stdout, stderr].filter((part) => part.length > 0).join('\n')
+        const tail = text.length > 0 ? text : `exit code: ${outcome.exitCode} (no output)`
+        if (outcome.exitCode !== 0) {
+          throw new Error(tail)
+        }
+        return { text: tail }
+      },
+    })
+  })
+
+  // ── 4) 按探测结果注册 pwsh 工具（win32=Windows 母系统 PowerShell；非 win32=跨世界后端）──
   ctx.effect(async () => {
     const snap = await probePromise
     if (snap.pwsh === undefined) return
@@ -559,7 +686,9 @@ export function apply(ctx, config) {
     const label = snap.pwsh.label
     const description = snap.platform === 'win32'
       ? `Run a PowerShell command on the Windows mother system. Backend: ${label}. ` +
-        'This is the default shell for Windows-side file operations; prefer it over bash for Windows paths (C:\\…). ' +
+        (snap.gitbash !== undefined
+          ? 'This is the FALLBACK shell for Windows-side file operations: prefer the `gitbash` tool for Windows paths (C:\\…); use pwsh when Git Bash is unavailable or PowerShell-specific features (registry, services, WMI, etc.) are needed. '
+          : 'This is the default shell for Windows-side file operations; prefer it over bash for Windows paths (C:\\…). ') +
         'Use it to operate the Windows host directly (registry, services, files, Git, etc.). ' +
         'Commands run in a fresh process; non-zero exit codes are reported as errors.'
       : `Run a PowerShell command. Backend: ${label}. ` +
