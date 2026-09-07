@@ -61,7 +61,7 @@ cp "$SRC"/agent.cordis.yml "$SRC"/preset.yml \
   for f in *.mjs; do node --check "$f" || exit 1; done
   ```
 - [ ] `agent.cordis.yml` 顶层 `- id:` 无重复（共 24 行）；`name:` 行无绝对路径、无 `dsh-wsl-workspace` 依赖。
-- [ ] 行序正确：`context-gate` 必须排第一，`tool-bootstrap` 第二，`router-core` / `router-progressive` / `dev-tool-search` 在 `env-probe` 之前。
+- [ ] 行序正确：`context-gate` 必须排第一，`tool-bootstrap` 第二，`router-progressive` / `dev-tool-search` 在 `env-probe` 之前；`router-core.mjs` 是纯函数库（无 apply），不作为插件装载。
 - [ ] `bootstrapTools` 为 `[bash, str_replace_editor]`；`compactionTools` 为 `[read, write, edit, glob, grep, todo_write, ask_user_question]`。
 - [ ] `context-gate` 与 `tool-bootstrap` 的 `includeSubagents: true` 保持同步。
 - [ ] 平台分派互斥：win32 与非 win32 各只有一组 bash/editor 提供者；`wsl-bash` 与顶层 `str-replace-editor` 的 disabled 表达式包含 `/[\\/]wsl-/.test(baseUrl)` 自禁用。
@@ -90,7 +90,7 @@ big-fat-whale-maid-adaptive/
 ├── context-gate.mjs        # 统一注入门控（anchored-standard 移植，必须排第一）
 ├── compaction-epoch.mjs    # epoch 感知晋升追踪（context-gate / tool-bootstrap 共享）
 ├── tool-bootstrap.mjs      # 首轮锚定 + 压缩后回落（anchored-standard 改造版）
-├── router-core.mjs         # 思维模式路由核心（router-standard 移植）
+├── router-core.mjs         # 思维模式路由核心（纯函数库，无 apply，不作为插件装载）
 ├── router-progressive.mjs  # 四阶段渐进披露（router-standard v1.20 语义移植）
 ├── dev-tool-search.mjs     # 按需工具解锁（anchored-standard 移植）
 ├── skill-search.mjs        # 技能搜索（anchored-standard 移植）
@@ -109,7 +109,6 @@ big-fat-whale-maid-adaptive/
 |---|---|---|
 | `context-gate` | `./context-gate.mjs` | **必须排第一**。统一注入门控：未晋升时 blank runtime-context + pre-step claimed-baseline deny（allowKinds: skill-invocation）；晋升后打开；compaction/end 重关 |
 | `tool-bootstrap` | `./tool-bootstrap.mjs` | 首轮只暴露 `bash + str_replace_editor`；晋升后放行全量（交给 router-progressive）；compaction 后回落到锚定对 + compactionTools；`promoteOn: either`；fail-open |
-| `router-core` | `./router-core.mjs` | 思维模式路由核心：classifyTask / overlayFor / sessionEvents / advanceStage / parseMode |
 | `router-progressive` | `./router-progressive.mjs` | 晋升后四阶段渐进披露（预解锁归零）+ persona 叠加句注入 + 阶段持久化（`DSH_HOME/whale-maid-router/stages.json`）+ phase_advance / dev_router_status / tools_catalog / tools_help / delivery_check |
 | `dev-tool-search` | `./dev-tool-search.mjs` | `dev_tool_search` 按名解锁工具（评分搜索）；解锁的工具立即可见（router-progressive 感知） |
 | `env-probe` | `./env-probe.mjs` | 挂载时探测静态环境；每会话首轮注入英文环境简报；注册 `env_probe` / `gitbash` / `pwsh` 工具 |
@@ -130,7 +129,7 @@ big-fat-whale-maid-adaptive/
 ### 4.2 关键设计约束（改造时不得破坏）
 
 1. **bootstrapTools 必须正好是 `[bash, str_replace_editor]`**，且两个名字在目标平台必须有注册者。
-2. **行序**：`context-gate` 第一、`tool-bootstrap` 第二（waterfall reverse-order 依赖）；`router-core` 必须在 `router-progressive` 之前（import 链）。
+2. **行序**：`context-gate` 第一、`tool-bootstrap` 第二（waterfall reverse-order 依赖）；`router-core.mjs` 是**纯函数库**（无 `apply`），**不作为插件装载**，仅供 `router-progressive.mjs` 相对路径 import。
 3. **平台分派互斥**：两组 bash/editor 提供者绝不可同时启用，否则报 `tool "bash" is already registered in this scope`。
 4. **`wsl-` 变体自禁用**：`wsl-bash` 与顶层 `str-replace-editor` 的 disabled 表达式必须包含 `/[\\/]wsl-/.test(baseUrl)`。
 5. **服务行必须带 isolate realm**；纯消费官方行不放 realm。

@@ -60,7 +60,7 @@ big-fat-whale-maid-adaptive/
 ├── context-gate.mjs        # 统一注入门控（anchored-standard 移植，必须排第一）
 ├── compaction-epoch.mjs    # epoch 感知晋升追踪（context-gate / tool-bootstrap 共享）
 ├── tool-bootstrap.mjs       # 首轮双工具锚定 + 压缩后回落（anchored-standard 改造版）
-├── router-core.mjs          # 思维模式路由核心：react/spec/weak 分类 + 模型感知叠加句
+├── router-core.mjs          # 思维模式路由核心（纯函数库，无 apply，不作为插件装载）
 ├── router-progressive.mjs   # 四阶段渐进披露 + delivery_check + 路由自检工具
 ├── dev-tool-search.mjs      # 按需工具解锁（dev_tool_search）
 ├── skill-search.mjs         # 技能搜索（skill_search / skill_load）

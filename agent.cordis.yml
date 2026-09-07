@@ -60,10 +60,8 @@
 
 # ── reasoning-mode routing (router-standard port) ────────────────────────────
 
-# 思维模式路由核心：任务分类 react/spec/weak + 模型感知叠加句（追加到女仆长
-# persona 之后，不替换人设）。API 与 router-standard/router-core 一致。
-- id: router-core
-  name: ./router-core.mjs?v=1
+# 思维模式路由核心（router-standard 移植）：router-core.mjs 是纯函数库
+# （无 apply），仅供 router-progressive.mjs 以相对路径 import 复用，不作为插件装载。
 
 # 渐进式工具披露：tool-bootstrap 晋升后接管——四阶段闯关（了解 → 方案 → 开发
 # → 验证），预放两档，调用下一档工具自动跳级，delivery_check 交付 gate。
