@@ -1,3 +1,3 @@
 name: '大肥鱼女仆长 · 环境自适应模式'
-description: '首轮以 Linux 极简双工具（bash + str_replace_editor）锚定开智；自动探测宿主环境（原生 Linux / 原生 Windows / WSL 内外）与工作目录所属世界，bash 直达 WSL 发行版、pwsh 操作 Windows 母系统，文件工具随世界路由，灵活来回操作两侧文件与软件；晋升后开放全量工具。'
+description: '首轮以 Linux 极简双工具（bash + str_replace_editor）锚定开智；自动探测宿主环境（原生 Linux / 原生 Windows / WSL 内外）与工作目录所属世界，gitbash 默认操作 Windows 母系统（pwsh 兜底）、bash 直达 WSL 发行版；晋升后进入任务感知思维模式路由（react/spec/weak 分类 + 模型感知叠加句）与四阶段渐进工具披露（了解 → 方案 → 开发 → 验证，delivery_check 交付 gate），dev_tool_search 按需解锁更重工具；全程保持蓝发蓝瞳鲸鱼娘女仆长人设。'
 order: 26

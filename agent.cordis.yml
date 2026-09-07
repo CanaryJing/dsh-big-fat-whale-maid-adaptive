@@ -34,16 +34,47 @@
 # that at mount. `true` means an entry-local realm: this standing mount's own
 # private instance, apart from every other preset's.
 
-# ── bootstrap (must stay FIRST) ─────────────────────────────────────────────
+# ── context gate (must stay FIRST) ───────────────────────────────────────────
+
+# 统一注入门控（anchored-standard 移植）：未晋升时关闭两条注入路径
+# （runtime-context blanking + pre-step claimed-baseline deny），晋升后打开；
+# compaction/end 边界重新关闭。includeSubagents 与 tool-bootstrap 同步。
+- id: context-gate
+  name: ./context-gate.mjs?v=1
+  config:
+    promoteOn: either
+    includeSubagents: true
+    allowKinds: [skill-invocation]
+
+# ── bootstrap ────────────────────────────────────────────────────────────────
 
 # 首轮锚定：仅暴露 Minimal 的真实工具对（bash + str_replace_editor），并抑制
 # 自动注入的工作区/Skill 上下文；首次工具调用或回复后一次性开放完整目录。
 - id: tool-bootstrap
-  name: ./tool-bootstrap.mjs?v=1
+  name: ./tool-bootstrap.mjs?v=2
   config:
     bootstrapTools: [bash, str_replace_editor]
     promoteOn: either
-    suppressedContextSources: [agent-instructions, skill-catalog]
+    includeSubagents: true
+    compactionTools: [read, write, edit, glob, grep, todo_write, ask_user_question]
+
+# ── reasoning-mode routing (router-standard port) ────────────────────────────
+
+# 思维模式路由核心：任务分类 react/spec/weak + 模型感知叠加句（追加到女仆长
+# persona 之后，不替换人设）。API 与 router-standard/router-core 一致。
+- id: router-core
+  name: ./router-core.mjs?v=1
+
+# 渐进式工具披露：tool-bootstrap 晋升后接管——四阶段闯关（了解 → 方案 → 开发
+# → 验证），预放两档，调用下一档工具自动跳级，delivery_check 交付 gate。
+# 阶段状态存 DSH_HOME/whale-maid-router/stages.json（与 router-standard 隔离）。
+- id: router-progressive
+  name: ./router-progressive.mjs?v=1
+  config: {}
+
+# 按需工具发现（anchored-standard 移植）：dev_tool_search 解锁更重的工具。
+- id: dev-tool-search
+  name: ./dev-tool-search.mjs?v=1
 
 # ── environment awareness ───────────────────────────────────────────────────
 
@@ -54,7 +85,7 @@
 # interop）同样注册，让 Windows 母系统在 Linux 世界里也可达。
 # (v2: env_probe 参数 schema 修正为 object-rooted JSON Schema)
 - id: env-probe
-  name: ./env-probe.mjs?v=1
+  name: ./env-probe.mjs?v=2
   config:
     probeTimeoutMs: 10000
 
@@ -69,6 +100,7 @@
     text: |-
       You are a helpful software engineer assistant.
       - When dealing with paths in the Windows environment, prioritize using Git Bash (the `gitbash` tool); fall back to PowerShell (`pwsh`) only when Git Bash is unavailable or PowerShell-specific features are needed. When calling PowerShell, check all versions installed by the user and try to call the latest version.  
+      - Task-mode routing: the router classifies each task (build → hands-on production; fix → inspect-and-plan) and appends the matching mode sentence to this persona per session.  
       - Use Bash when handling files in a Linux environment.  
       - Shell routing policy: on a Windows host, Windows-side file operations (C:\… paths) default to `gitbash` (Git Bash); fall back to `pwsh` when Git Bash is unavailable. `bash` is for WSL/Linux-side work. You may use `bash` on Windows files via /mnt/<drive> only when the task genuinely requires Linux-only tools (e.g. grep/find over WSL paths, Linux binaries, pipelines neither gitbash nor pwsh can express); otherwise prefer `gitbash`, `pwsh`, or the read/write/edit file tools. Do not pick bash merely out of habit.  
       - Before calling a tool, check its availability and think about how to use it, trying to avoid incorrect calls and tool failures.  
@@ -78,11 +110,13 @@
     complete: true
     includeRuntimeContext: false
 
-# 首轮由 tool-bootstrap 抑制工作区上下文注入，提升后正常注入 AGENTS.md / CLAUDE.md 摘要。
-- id: agent-instructions
-  name: '@deepseek-ai/dsh-agent-instructions'
+# 指令文件提示（anchored-standard 移植）：不注入完整 AGENTS.md digest，
+# 晋升后注入一次短提示（"这些指令文件存在；行动前读它们"），模型自己读文件。
+- id: instruction-hint
+  name: ./instruction-hint.mjs?v=1
   config:
-    maxBytes: 65536
+    promoteOn: either
+    includeSubagents: true
 
 # ── shell worlds ────────────────────────────────────────────────────────────
 #
@@ -131,7 +165,7 @@
 # plugin dependency, single-preset deployment). The `wsl-` self-disable keeps
 # the auto-generated WSL variant (which supplies its own bash) conflict-free.
 - id: wsl-bash
-  name: ./wsl-bash.mjs?v=1
+  name: ./wsl-bash.mjs?v=2
   disabled: !!js process.platform !== 'win32' || /[\\/]wsl-/.test(baseUrl)
 
 # Windows host: str_replace_editor runs over the HOST filesystem — both
@@ -201,8 +235,10 @@
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
 
-- id: tool-skill
-  name: '@deepseek-ai/dsh-tool-skill'
+# 技能搜索（anchored-standard 移植）：skill_search + skill_load 按需加载，
+# 替代 ~9KB 的 skill catalog 注入（省 token）。
+- id: skill-search
+  name: ./skill-search.mjs?v=1
 
 # ── goals ───────────────────────────────────────────────────────────────────
 
