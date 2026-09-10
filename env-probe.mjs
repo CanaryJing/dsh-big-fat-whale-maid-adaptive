@@ -561,7 +561,7 @@ export function apply(ctx, config) {
             id: `env-brief-${session.id}`,
             role: 'user',
             content: [{ type: 'text', text }],
-            source: { kind: 'env-probe', form: 'brief' },
+            source: { kind: 'plugin', plugin: 'big-fat-whale-maid-adaptive' },
           },
         ],
       }
