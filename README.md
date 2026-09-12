@@ -1,5 +1,7 @@
-# DS女仆长模式（改编自风神插件与明神插件）
+# DS女仆长模式
 
+> **当前版本 v2.0 · 独立实现**：已移除并**不再采用**风神（dsh-routing-suite）与明神（dsh-anchored-standard）的上游方案（首轮锚定 / 注入门控 / 渐进披露 / 按需解锁）。
+>
 > DSH（DeepSeek Harness）自定义 Agent Preset 插件：**全量工具一次性开放**——所有已注册工具从第一轮起全部可见（无首轮锚定、无四阶段渐进披露、无按需解锁）；自动探测宿主系统（Windows / Linux / WSL / macOS / Android）与工作目录所属世界，`gitbash` **全环境第一优先**（Windows 母系统、WSL 文件经 UNC、通用 shell 任务；`pwsh` 兜底）、`bash` 直达 WSL 发行版；任务感知思维模式路由（react / spec / weak）与 `delivery_check` 交付 gate；全程保持蓝发蓝瞳鲸鱼娘女仆长人设。
 >
 > **单预设自包含 · 零外部插件依赖**：不依赖 `dsh-wsl-workspace`，复制一个文件夹即可使用。
@@ -87,15 +89,24 @@ big-fat-whale-maid-adaptive/
 
 ---
 
-## 六、改编来源与致谢
+## 六、来源说明与致谢
 
-本项目改编自两位 DSH 社区插件作者的优秀作品——**风神**（yjh051108）的 dsh-routing-suite 与**明神**（xiaobright）的 dsh-anchored-standard，感谢他们的设计与公开分享：
+**自 v2.0 起，本预设不再采用风神（dsh-routing-suite）与明神（dsh-anchored-standard）的上游方案**——首轮锚定、统一注入门控、四阶段渐进披露、按需工具解锁均已移除，预设转为独立实现与维护。
 
-| 上游项目 | 作者 | 本项目借鉴 |
+仍沿用其少量通用工具模块（归属与致谢保留）：
+
+| 上游项目 | 作者 | 仍沿用的模块 |
 |---|---|---|
-| [dsh-routing-suite](https://github.com/yjh051108/dsh-routing-suite) | **风神**（yjh051108） | 思维模式路由（react/spec/weak 分类 + 模型感知叠加句）、delivery_check 交付 gate、Git Bash 探测经验 |
-| [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard) | **明神**（xiaobright） | 技能搜索（skill_search / skill_load）、指令文件短提示（instruction-hint）、epoch 感知晋升（compaction-epoch） |
+| [dsh-routing-suite](https://github.com/yjh051108/dsh-routing-suite) | **风神**（yjh051108） | `router-core.mjs` 思维模式路由（react/spec/weak 分类 + 模型感知叠加句）、`delivery_check` 交付 gate |
+| [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard) | **明神**（xiaobright） | `skill-search.mjs`（skill_search / skill_load）、`instruction-hint.mjs`（指令文件短提示）、`compaction-epoch.mjs`（epoch 感知追踪） |
 
-> 2026-09 起按主人要求移除首轮锚定（tool-bootstrap）、注入门控（context-gate）与按需解锁（dev-tool-search），渐进披露改为全量工具一次性开放；相关源码保留在仓库备查，历史版本见 git。
+> 已移除的上游方案源码保留在仓库备查（`context-gate.mjs` / `tool-bootstrap.mjs` / `dev-tool-search.mjs`），不再装载；历史版本见 git。
 
-详细改编说明与致谢见 [CREDITS.md](./CREDITS.md)。
+详细来源说明见 [CREDITS.md](./CREDITS.md)。
+
+---
+
+## 七、版本历史
+
+- **v2.0.0**（2026-09）：全量工具一次性开放（移除首轮锚定 / 注入门控 / 四阶段渐进披露 / 按需解锁）；系统环境报告覆盖 Windows / Linux / WSL / macOS / Android；`gitbash` 全环境第一优先（含 WSL UNC 工作目录）；更名「DS女仆长模式」；不再采用风神 / 明神的上游方案。
+- **v1.x**：首轮 Linux 极简双工具锚定 + 四阶段渐进披露 + 环境 / 世界路由（改编自风神 / 明神上游）。
