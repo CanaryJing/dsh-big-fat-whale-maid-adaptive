@@ -32,7 +32,7 @@ big-fat-whale-maid-adaptive/
 | id | 类型 | 作用 |
 |---|---|---|
 | `router-progressive` | `./router-progressive.mjs` | 任务模式路由：注入 react/spec/weak 叠加句到 persona；注册 `dev_router_status` / `delivery_check`；**不做任何工具门控** |
-| `env-probe` | `./env-probe.mjs` | 挂载时探测静态环境；每会话首轮注入英文环境简报；注册 `env_probe` / `gitbash` / `pwsh` 工具 |
+| `env-probe` | `./env-probe.mjs` | 挂载时探测静态环境；每会话首轮注入英文**系统环境报告**（OS/内核/架构、CPU/内存、用户与 home/tmp、cwd 世界、shell 与路径规则；覆盖 Windows / Linux / WSL / macOS / Android）；注册 `env_probe` / `gitbash`（全环境第一优先）/ `pwsh` 工具 |
 | `persona` | `@deepseek-ai/dsh-persona` | 女仆长人设 + 外貌设定 + 任务模式路由说明；`complete: true`、`includeRuntimeContext: false` |
 | `instruction-hint` | `./instruction-hint.mjs` | 首次工具调用/回复后注入一次指令文件短提示（非命令式措辞，randomUUID 唯一 id，全链探测 AGENTS.md/CLAUDE.md） |
 | `native-persistent-shell` | cordis:group，isolate `terminals` | 非 win32 提供 Minimal 同款持久 PTY bash（工具名 `bash`）；`disabled: win32` |
@@ -62,12 +62,12 @@ big-fat-whale-maid-adaptive/
 - **`router-core.mjs`**：导出 `classifyTask(text)`（1=react / 0=spec / 'weak'）、`overlayFor(mode, modelId)`（任务模式叠加句）、`sessionEvents(session)`（snapshotEvents 兼容）、`sessionMode(session)`、`parseMode(token)`、`bandOf/bandFor/isFlashModel/isComplexTask/clamp01/applyPersona`。
 - **`router-progressive.mjs`**：`name = 'whale-maid-router'`，`inject = ['systemPrompt', 'tools']`。注入任务模式叠加句；注册 `dev_router_status` / `delivery_check`；**无 STAGES、无 restrictTools、无 phase_advance**（全量开放）。
 - **`compaction-epoch.mjs`**：`createEpochPromotion(promoteEvents, options)`——epoch 感知晋升追踪，供 `instruction-hint.mjs` 使用。
-- **`env-probe.mjs`**：导出 `probeStatic(timeoutMs)`（async）、`worldOf(cwd)`、`buildBrief(snapshot, cwd, wslVariant)`。注册 `env_probe` / `gitbash`（win32，Windows 侧默认）/ `pwsh`（win32 回退；非 win32 探测到才注册）。英文简报。
+- **`env-probe.mjs`**：导出 `probeStatic(timeoutMs)`（async）、`worldOf(cwd)`、`buildBrief(snapshot, cwd, wslVariant)`。注册 `env_probe` / `gitbash`（win32，全环境第一优先）/ `pwsh`（win32 回退；非 win32 探测到才注册）。英文系统环境报告（含 OS / 硬件 / 用户 / cwd / shell）。
 - **`wsl-bash.mjs`**：导出 `planFor(workdir, fallbackDistro, username)` 三态翻译；执行形状 `wsl.exe -d <distro> [--cd <linuxCwd>] -e bash -lc <command>`。
 
 ## 2. 安装方法（AI 执行手册）
 
-1. **校验环境**：Windows 宿主需 `wsl.exe -l -q` 至少列出一个发行版（否则 bash 工具不注册，预设仍可运行）；Git for Windows 提供 `gitbash` 工具（缺失自动回退 pwsh）；Linux 宿主无额外要求。
+1. **校验环境**：Windows 宿主需 `wsl.exe -l -q` 至少列出一个发行版（否则 bash 工具不注册，预设仍可运行）；Git for Windows 提供 `gitbash` 工具（全环境第一优先；缺失自动回退 pwsh）；Linux 宿主无额外要求。
 2. **复制项目**（9 个运行文件）：
    ```powershell
    $dst = "$env:USERPROFILE\.dsh\.agent-presets\big-fat-whale-maid-adaptive"
@@ -83,7 +83,7 @@ big-fat-whale-maid-adaptive/
    - import 链测试：`node -e "import('./router-core.mjs').then(m => console.log(typeof m.classifyTask))"` 等；
    - `planFor` 三态翻译正确；真实运行 `wsl.exe -d <distro> --cd /home/<user> -e bash -lc 'echo ok; uname -srm'` 成功；
    - 模拟 dsh-wsl-workspace 变体生成器（WORLD_ROWS = tool-bash/tool-pwsh/tool-fs/tool-fs-search/filesystem/persistent-shell）：win32 视角变体的活跃 bash/editor 提供者都恰好 1。
-4. **生效**：重启 `dsh web`；新建会话选择该预设；第一轮即应看到**全量工具** + 英文环境简报。
+4. **生效**：重启 `dsh web`；新建会话选择该预设；第一轮即应看到**全量工具** + 英文**系统环境报告**（覆盖 Windows / Linux / WSL / macOS / Android）。
 
 ## 3. 常见故障诊断
 

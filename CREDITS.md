@@ -1,6 +1,6 @@
 # CREDITS — 改编来源与致谢
 
-「大肥鱼女仆长 · 环境自适应模式」是基于以下两个 DSH（DeepSeek Harness）社区插件改编而来，特此向原作者致谢。
+「DS女仆长模式」（预设 id：`big-fat-whale-maid-adaptive`）是基于以下两个 DSH（DeepSeek Harness）社区插件改编而来，特此向原作者致谢。
 
 > 「风神」「明神」分别是两位作者的名称：风神 = yjh051108（dsh-routing-suite），明神 = xiaobright（dsh-anchored-standard）。
 >

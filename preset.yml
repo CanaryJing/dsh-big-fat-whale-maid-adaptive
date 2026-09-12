@@ -1,3 +1,3 @@
-name: '大肥鱼女仆长 · 环境自适应模式'
-description: '全量工具一次性开放（无首轮锚定、无渐进披露、无按需解锁）；自动探测宿主环境（原生 Linux / 原生 Windows / WSL 内外）与工作目录所属世界，gitbash 默认操作 Windows 母系统（pwsh 兜底）、bash 直达 WSL 发行版；任务感知思维模式路由（react/spec/weak 分类 + 模型感知叠加句）+ delivery_check 交付 gate；全程保持蓝发蓝瞳鲸鱼娘女仆长人设。'
+name: 'DS女仆长模式'
+description: '全量工具一次性开放（无首轮锚定、无渐进披露、无按需解锁）；首轮注入英文系统环境报告（Windows / Linux / WSL / macOS / Android 的 OS、硬件、用户、cwd 世界、shell 与路径规则）；gitbash 全环境第一优先（含 WSL 文件经 UNC；pwsh 兜底）、bash 直达 WSL 发行版；任务感知思维模式路由（react/spec/weak）+ delivery_check 交付 gate；蓝发蓝瞳鲸鱼娘女仆长人设。'
 order: 26

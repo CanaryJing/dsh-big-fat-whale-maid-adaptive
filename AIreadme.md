@@ -1,6 +1,6 @@
 # AIreadme.md — 安装方法（给 AI / 维护者）
 
-> 本文件是「大肥鱼女仆长 · 环境自适应模式」的**安装手册**，面向需要安装、维护、改造或诊断本预设的 AI 智能体与开发者。插件作用说明见 [README.md](./README.md)。
+> 本文件是「DS女仆长模式」的**安装手册**，面向需要安装、维护、改造或诊断本预设的 AI 智能体与开发者。插件作用说明见 [README.md](./README.md)。
 >
 > 本预设**单目录自包含**：不依赖 dsh-wsl-workspace 插件，不需要修改任何绝对路径。
 >
@@ -12,7 +12,7 @@
 
 - 已安装 DSH CLI 与 `dsh web`。
 - Windows 宿主若想使用「bash 直达 WSL」功能，需至少安装一个 WSL 发行版（例如 `wsl --install -d kali-linux`），且 `wsl.exe -l -q` 能列出发行版。
-- Windows 宿主若想使用 `gitbash` 工具（Windows 侧默认 shell），需安装 Git for Windows（探测顺序：`Program Files\Git\bin\bash.exe` → `Program Files (x86)` → 每用户 `LOCALAPPDATA\Programs\Git`）；未安装时自动回退 `pwsh`。
+- Windows 宿主若想使用 `gitbash` 工具（全环境第一优先 shell），需安装 Git for Windows（探测顺序：`Program Files\Git\bin\bash.exe` → `Program Files (x86)` → 每用户 `LOCALAPPDATA\Programs\Git`）；未安装时自动回退 `pwsh`。
 - Linux 宿主无额外要求；如希望 `pwsh` 工具可用，可自行安装 PowerShell。
 - 无需安装任何 npm 依赖：全部 `.mjs` 只使用 `node:` 内置模块。
 
@@ -46,7 +46,7 @@ cp "$SRC"/agent.cordis.yml "$SRC"/preset.yml \
 
 ### 2.3 生效
 
-重启 `dsh web`，新建会话并在模式选择器中选择「**大肥鱼女仆长 · 环境自适应模式**」。
+重启 `dsh web`，新建会话并在模式选择器中选择「**DS女仆长模式**」。
 
 > 注意：只复制插件运行所需的 **9 个文件**即可；`context-gate.mjs`、`tool-bootstrap.mjs`、`dev-tool-search.mjs` 是已卸载的旧机制源码（仅备查，不参与组合），`README.md`、`AI.md` 与 `AIreadme.md` 是文档，均可选择性复制。
 
@@ -75,7 +75,7 @@ cp "$SRC"/agent.cordis.yml "$SRC"/preset.yml \
   ```bash
   wsl.exe -d <distro> --cd /home/<user> -e bash -lc 'echo ok; uname -srm'
   ```
-- [ ] 重启后新建会话，第一轮即应看到**全量工具**（无锚定对、无阶段限制）+ 英文环境简报。
+- [ ] 重启后新建会话，第一轮即应看到**全量工具**（无锚定对、无阶段限制）+ 英文**系统环境报告**（OS/内核/架构、CPU/内存、用户、cwd 世界、shell、路径规则）。
 
 ---
 
@@ -106,7 +106,7 @@ big-fat-whale-maid-adaptive/
 | id | 类型 | 作用 |
 |---|---|---|
 | `router-progressive` | `./router-progressive.mjs` | 任务模式路由：注入 react/spec/weak 叠加句到 persona；注册 `dev_router_status` / `delivery_check`；**不做任何工具门控** |
-| `env-probe` | `./env-probe.mjs` | 挂载时探测静态环境；每会话首轮注入英文环境简报；注册 `env_probe` / `gitbash` / `pwsh` 工具 |
+| `env-probe` | `./env-probe.mjs` | 挂载时探测静态环境；每会话首轮注入英文**系统环境报告**（OS/内核/架构、CPU/内存、用户与 home/tmp、cwd 世界、shell 与路径规则；覆盖 Windows / Linux / WSL / macOS / Android）；注册 `env_probe` / `gitbash`（全环境第一优先）/ `pwsh` 工具 |
 | `persona` | `@deepseek-ai/dsh-persona` | 女仆长人设 + 外貌设定 + 任务模式路由说明；`complete: true`、`includeRuntimeContext: false` |
 | `instruction-hint` | `./instruction-hint.mjs` | 首次工具调用/回复后注入一次指令文件短提示（非命令式措辞，randomUUID 唯一 id，全链探测 AGENTS.md/CLAUDE.md） |
 | `native-persistent-shell` | cordis:group，isolate `terminals` | 非 win32 提供 Minimal 同款持久 PTY bash（工具名 `bash`）；`disabled: win32` |
@@ -136,7 +136,7 @@ big-fat-whale-maid-adaptive/
 - **`router-core.mjs`**：导出 `classifyTask(text)`（1=react / 0=spec / 'weak'）、`overlayFor(mode, modelId)`（任务模式叠加句，Flash 模型 weak 带三锚）、`sessionEvents(session)`（snapshotEvents 兼容）、`sessionMode(session)`、`parseMode(token)`、`bandOf/bandFor/isFlashModel/isComplexTask/clamp01/applyPersona`。
 - **`router-progressive.mjs`**：`name = 'whale-maid-router'`，`inject = ['systemPrompt', 'tools']`。注入任务模式叠加句；注册 `dev_router_status` / `delivery_check`；**无 STAGES、无 restrictTools、无 phase_advance**（全量开放）。
 - **`compaction-epoch.mjs`**：`createEpochPromotion(promoteEvents, options)`——epoch 感知晋升追踪，供 `instruction-hint.mjs` 使用。
-- **`env-probe.mjs`**：导出 `probeStatic(timeoutMs)`（async）、`worldOf(cwd)`、`buildBrief(snapshot, cwd, wslVariant)`。注册 `env_probe` / `gitbash`（win32，Windows 侧默认）/ `pwsh`（win32 回退；非 win32 探测到才注册）。英文简报。
+- **`env-probe.mjs`**：导出 `probeStatic(timeoutMs)`（async）、`worldOf(cwd)`、`buildBrief(snapshot, cwd, wslVariant)`。注册 `env_probe` / `gitbash`（win32，全环境第一优先）/ `pwsh`（win32 回退；非 win32 探测到才注册）。英文系统环境报告（含 OS / 硬件 / 用户 / cwd / shell）。
 - **`wsl-bash.mjs`**：导出 `planFor(workdir, fallbackDistro, username)` 三态翻译；执行形状 `wsl.exe -d <distro> [--cd <linuxCwd>] -e bash -lc <command>`。
 
 ---

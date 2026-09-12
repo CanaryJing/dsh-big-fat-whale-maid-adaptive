@@ -215,7 +215,7 @@ export function apply(ctx, config) {
         '* You do have access to a mirror of common linux and python packages via apt and pip.',
         '* Each call runs a fresh bash -lc shell (state does NOT persist across calls).',
         '* Linux paths are native here; Windows files are reachable as /mnt/<drive> (e.g. /mnt/c/Users/...).',
-        '* ROUTING: this tool is for WSL/Linux-side work. For Windows-side file operations (C:\\… or /mnt/<drive>), prefer the `pwsh` tool or read/write/edit; use bash on /mnt/<drive> only when the operation genuinely needs Linux-only tools.',
+        '* ROUTING: prefer the `gitbash` tool FIRST for every shell task it can handle (including WSL files via //wsl.localhost/… UNC); this bash tool is for WSL/Linux-side work that gitbash cannot do (package managers, Linux-only tooling, /proc, or when gitbash is unavailable). Use /mnt/<drive> only when the operation genuinely needs Linux-only tools.',
         "* To inspect a particular line range of a file, e.g. lines 10-25, try 'sed -n 10,25p /path/to/the/file'.",
         '* Please avoid commands that may produce a very large amount of output.',
         "* To run long-lived work, start it in the background inside bash, e.g. 'sleep 10 &'.",
