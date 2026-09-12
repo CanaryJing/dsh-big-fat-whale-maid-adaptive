@@ -1,10 +1,9 @@
 # The `big-fat-whale-maid-adaptive` preset: 大肥鱼女仆长 · 环境自适应模式.
 #
 # Design goals:
-#   1. First-request anchoring — keep request #1 on the REAL Minimal tool pair
-#      (persistent `bash` + `str_replace_editor`) with auto-injected context
-#      stripped, so the session opens on the Linux-Minimal trajectory
-#      ("开智" anchor, per xiaobright/modeltest & dsh-anchored-standard).
+#   1. Full catalog from request #1 — every registered tool is visible
+#      immediately. No first-round bootstrap pair, no progressive disclosure,
+#      no on-demand unlock (2026-09: 按主人要求「工具一次性全部开放」).
 #   2. Environment self-awareness — `env-probe` detects the host world
 #      (native Linux / native Windows / running inside WSL), the world the
 #      session cwd lives in (Windows drive, WSL filesystem, native Linux),
@@ -15,8 +14,9 @@
 #      on the Windows mother system and file tools run on the host filesystem
 #      (WSL files reachable via \\wsl.localhost UNC). On a native Linux host
 #      everything is native and `pwsh` is added only when present.
-#   4. Full catalog after promotion — the entire Standard tool set (plus the
-#      product subagents) becomes visible once the session promotes.
+#   4. Task-mode routing — router-progressive injects the react/spec/weak
+#      overlay sentence into the persona per session, and registers
+#      dev_router_status + delivery_check (交付 gate).
 #   5. The 蓝发蓝瞳 whale-maid persona, thinking in Chinese.
 #
 # This file is an AGENT-PLANE composition. The roster mounts it ONCE under a
@@ -34,45 +34,25 @@
 # that at mount. `true` means an entry-local realm: this standing mount's own
 # private instance, apart from every other preset's.
 
-# ── context gate (must stay FIRST) ───────────────────────────────────────────
+# ── tool policy: full catalog, no gating ─────────────────────────────────────
+#
+# 2026-09 起按主人要求「工具一次性全部开放」：
+#   - 不再装载 context-gate（首轮注入门控）与 tool-bootstrap（首轮锚定）——
+#     所有已注册工具从第一轮起全部可见，压缩后也不回落；
+#   - 不再装载 dev-tool-search（按需解锁）——目录全量可见，无需解锁；
+#   - 三个旧插件源码仍保留在项目目录（context-gate.mjs / tool-bootstrap.mjs /
+#     dev-tool-search.mjs），仅作备查，不参与组合。
 
-# 统一注入门控（anchored-standard 移植）：未晋升时关闭两条注入路径
-# （runtime-context blanking + pre-step claimed-baseline deny），晋升后打开；
-# compaction/end 边界重新关闭。includeSubagents 与 tool-bootstrap 同步。
-- id: context-gate
-  name: ./context-gate.mjs?v=1
-  config:
-    promoteOn: either
-    includeSubagents: true
-    allowKinds: [skill-invocation]
+# ── reasoning-mode routing ───────────────────────────────────────────────────
 
-# ── bootstrap ────────────────────────────────────────────────────────────────
+# 思维模式路由核心：router-core.mjs 是纯函数库（无 apply），仅供
+# router-progressive.mjs 以相对路径 import 复用，不作为插件装载。
 
-# 首轮锚定：仅暴露 Minimal 的真实工具对（bash + str_replace_editor），并抑制
-# 自动注入的工作区/Skill 上下文；首次工具调用或回复后一次性开放完整目录。
-- id: tool-bootstrap
-  name: ./tool-bootstrap.mjs?v=2
-  config:
-    bootstrapTools: [bash, str_replace_editor]
-    promoteOn: either
-    includeSubagents: true
-    compactionTools: [read, write, edit, glob, grep, todo_write, ask_user_question]
-
-# ── reasoning-mode routing (router-standard port) ────────────────────────────
-
-# 思维模式路由核心（router-standard 移植）：router-core.mjs 是纯函数库
-# （无 apply），仅供 router-progressive.mjs 以相对路径 import 复用，不作为插件装载。
-
-# 渐进式工具披露：tool-bootstrap 晋升后接管——四阶段闯关（了解 → 方案 → 开发
-# → 验证），预放两档，调用下一档工具自动跳级，delivery_check 交付 gate。
-# 阶段状态存 DSH_HOME/whale-maid-router/stages.json（与 router-standard 隔离）。
+# 任务模式路由 + 交付 gate：注入 react/spec/weak 叠加句到 persona，
+# 注册 dev_router_status 与 delivery_check；不做任何工具门控（全量开放）。
 - id: router-progressive
-  name: ./router-progressive.mjs?v=1
+  name: ./router-progressive.mjs?v=2
   config: {}
-
-# 按需工具发现（anchored-standard 移植）：dev_tool_search 解锁更重的工具。
-- id: dev-tool-search
-  name: ./dev-tool-search.mjs?v=1
 
 # ── environment awareness ───────────────────────────────────────────────────
 
@@ -95,7 +75,7 @@
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    text: |-
+    prefix: |-
       You are a helpful software engineer assistant.
       - When dealing with paths in the Windows environment, prioritize using Git Bash (the `gitbash` tool); fall back to PowerShell (`pwsh`) only when Git Bash is unavailable or PowerShell-specific features are needed. When calling PowerShell, check all versions installed by the user and try to call the latest version.  
       - Task-mode routing: the router classifies each task (build → hands-on production; fix → inspect-and-plan) and appends the matching mode sentence to this persona per session.  
