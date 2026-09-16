@@ -108,5 +108,6 @@ big-fat-whale-maid-adaptive/
 
 ## 七、版本历史
 
+- **v2.0.1**（2026-09）：修复 `env_probe` 工具回归——v2.0.0 把 `shellRoutes` 更名为 `shellSummary` 时，漏改了 `env_probe` 工具内唯一的调用点（该行本身即为从未被使用的死代码，故长期未被发现），导致「重新探测环境」必抛 `ReferenceError: shellRoutes is not defined`，环境报告无法手动刷新；现已删除该死代码行，`env_probe` 恢复可用。
 - **v2.0.0**（2026-09）：全量工具一次性开放（移除首轮锚定 / 注入门控 / 四阶段渐进披露 / 按需解锁）；系统环境报告覆盖 Windows / Linux / WSL / macOS / Android；`gitbash` 全环境第一优先（含 WSL UNC 工作目录）；更名「DS女仆长模式」；不再采用风神 / 明神的上游方案。
 - **v1.x**：首轮 Linux 极简双工具锚定 + 四阶段渐进披露 + 环境 / 世界路由（改编自风神 / 明神上游）。

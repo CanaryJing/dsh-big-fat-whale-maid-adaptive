@@ -697,8 +697,6 @@ export function apply(ctx, config) {
       async execute(_args, exec) {
         const fresh = await refresh()
         const cwd = exec?.agent?.session?.header?.cwd ?? process.cwd()
-        const world = worldOf(cwd)
-        const routes = shellRoutes(fresh, world, isWslVariant)
         const smokeTimeout = Math.max(probeTimeoutMs, 15000)
         const [bashTest, gitbashTest, pwshTest] = await Promise.all([
           smokeBash(fresh, smokeTimeout),
