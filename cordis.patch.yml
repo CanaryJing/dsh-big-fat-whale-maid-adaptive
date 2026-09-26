@@ -12,8 +12,21 @@
 #   then list `dsh-preset-big-fat-whale-maid-adaptive` in that profile's
 #   package.json `dsh.profile.bundles`.
 #
-# Plugin module names beginning with `./` are resolved RELATIVE TO THIS PATCH
-# FILE, so the `.mjs` plugins travel with the directory.
+# Plugin modules are named by PACKAGE SUBPATH
+# (`dsh-preset-big-fat-whale-maid-adaptive/<file>.mjs`, declared in this
+# package.json's `exports`) rather than by relative path.
+#
+# WHY (v2.1.1 fix): rows nested inside a preset declaration's `config.plugins`
+# are NOT anchored beside the bundle's patch file. The registry hands its
+# subtree the DECLARING LOADER's baseUrl — which is the PROFILE directory — so
+# `./env-probe.mjs` resolved to `$PROFILE_DIR/env-probe.mjs`, the import failed,
+# and `cordis-plugin-loader`'s `_init()` records an import failure by logging it
+# and returning with `entry.fiber` still undefined. The mount audit then reports
+# every such row as "never started" and the whole preset shows as 加载失败.
+# Package subpaths resolve from the profile directory, where this bundle really
+# is installed (`<profile>/node_modules/<pkg>/`), and the `exports` map in
+# package.json admits them. Do not reintroduce relative paths or `?v=` cache
+# query strings here — a query would break `exports` subpath matching.
 #
 # Row ids here live inside this preset's own namespace, so they may repeat ids
 # used by the other preset declarations (standard / ptc / minimal / cordis).
@@ -29,14 +42,14 @@
         plugins:
           # ── task-mode routing + delivery gate ────────────────────────────
           - id: router-progressive
-            name: ./router-progressive.mjs?v=2
+            name: dsh-preset-big-fat-whale-maid-adaptive/router-progressive.mjs
             config: {}
 
           # ── environment awareness ───────────────────────────────────────
           # Detects the host world + the session cwd's world, injects the
           # English environment report, registers env_probe / gitbash / pwsh.
           - id: env-probe
-            name: ./env-probe.mjs?v=2
+            name: dsh-preset-big-fat-whale-maid-adaptive/env-probe.mjs
             config:
               probeTimeoutMs: 10000
 
@@ -58,7 +71,7 @@
           # Instruction-file short hint (ported from anchored-standard): does not
           # inject the full AGENTS.md digest; the model reads the files itself.
           - id: instruction-hint
-            name: ./instruction-hint.mjs?v=1
+            name: dsh-preset-big-fat-whale-maid-adaptive/instruction-hint.mjs
             config:
               promoteOn: either
               includeSubagents: true
@@ -103,7 +116,7 @@
           # (no dsh-wsl-workspace dependency). The `wsl-` self-disable keeps the
           # auto-generated WSL variant (which supplies its own bash) conflict-free.
           - id: wsl-bash
-            name: ./wsl-bash.mjs?v=2
+            name: dsh-preset-big-fat-whale-maid-adaptive/wsl-bash.mjs
             disabled: !!js process.platform !== 'win32' || /[\\/]wsl-/.test(baseUrl)
 
           # Windows host: str_replace_editor runs over the HOST filesystem —
@@ -159,7 +172,7 @@
           # skill_search + skill_load on demand, replacing the ~9KB skill
           # catalog injection (token saving).
           - id: skill-search
-            name: ./skill-search.mjs?v=1
+            name: dsh-preset-big-fat-whale-maid-adaptive/skill-search.mjs
 
           # ── goals ───────────────────────────────────────────────────────
           - id: command-goal

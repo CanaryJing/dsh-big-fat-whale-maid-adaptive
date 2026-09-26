@@ -1,10 +1,21 @@
 {
   "name": "dsh-preset-big-fat-whale-maid-adaptive",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "private": true,
   "description": "DS女仆长模式 — DSH agent preset bundle (whale-maid, environment-adaptive): full tool catalog, environment report, gitbash-first shell routing, task-mode routing, delivery gate.",
   "type": "module",
   "license": "MIT",
+  "exports": {
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json",
+    "./router-core.mjs": "./router-core.mjs",
+    "./router-progressive.mjs": "./router-progressive.mjs",
+    "./compaction-epoch.mjs": "./compaction-epoch.mjs",
+    "./instruction-hint.mjs": "./instruction-hint.mjs",
+    "./skill-search.mjs": "./skill-search.mjs",
+    "./env-probe.mjs": "./env-probe.mjs",
+    "./wsl-bash.mjs": "./wsl-bash.mjs"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

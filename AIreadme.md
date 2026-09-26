@@ -36,6 +36,12 @@ dsh plugin --profile web add "file:D:/path/to/big-fat-whale-maid-adaptive"
 dsh plugin --profile web add "file:/path/to/big-fat-whale-maid-adaptive"
 ```
 
+> **⚠️ 本地插件的引用方式（v2.1.1 起）**：预设声明内部的插件行**不能用相对路径**
+> （`./env-probe.mjs`）——预设子树拿到的解析基准是 **profile 目录**，相对路径必然 import 失败，
+> 而 Loader 对导入失败只记日志、不抛错，挂载审计只会报 `never started`，表现为整个预设「加载失败」。
+> 本 bundle 因此写作包内子路径 `dsh-preset-big-fat-whale-maid-adaptive/<file>.mjs`，并在
+> `package.json` 的 `exports` 里逐条放行（也不要加 `?v=` 查询串，查询串会破坏 exports 匹配）。
+
 `dsh plugin` 把参数转发给 profile 目录里的 pnpm，成功后会**自动**把包名
 `dsh-preset-big-fat-whale-maid-adaptive` 追加进该 profile 的 `dsh.profile.bundles`。
 
@@ -85,7 +91,7 @@ dsh plugin --profile web add "file:/path/to/big-fat-whale-maid-adaptive"
   ```bash
   for f in *.mjs; do node --check "$f" || exit 1; done
   ```
-- [ ] `cordis.patch.yml` 中 preset 声明的 `plugins` 顶层 `- id:` 无重复；`name:` 行无绝对路径、无 `dsh-wsl-workspace` 依赖；`./*.mjs` 相对路径文件都存在。
+- [ ] `cordis.patch.yml` 中 preset 声明的 `plugins` 顶层 `- id:` 无重复；`name:` 行无绝对路径、无 `dsh-wsl-workspace` 依赖；本 bundle 自己的模块写作包内子路径（`<包名>/<file>.mjs`）且在 `package.json` 的 `exports` 里都有对应条目、对应文件都存在。
 - [ ] 组合中**不含** `context-gate` / `tool-bootstrap` / `dev-tool-search` 行（全量开放策略）。
 - [ ] 平台分派互斥：win32 与非 win32 各只有一组 bash/editor 提供者；`wsl-bash` 与顶层 `str-replace-editor` 的 disabled 表达式包含 `/[\\/]wsl-/.test(baseUrl)` 自禁用。
 - [ ] 服务行带 isolate realm：`native-persistent-shell`（terminals）、`bootstrap-filesystem`（fs）。
@@ -132,12 +138,12 @@ big-fat-whale-maid-adaptive/
 
 | id | 类型 | 作用 |
 |---|---|---|
-| `router-progressive` | `./router-progressive.mjs` | 任务模式路由：注入 react/spec/weak 叠加句到 persona；注册 `dev_router_status` / `delivery_check`；**不做任何工具门控** |
-| `env-probe` | `./env-probe.mjs` | 挂载时探测静态环境；每会话首轮注入英文**系统环境报告**（OS/内核/架构、CPU/内存、用户与 home/tmp、cwd 世界、shell 与路径规则；覆盖 Windows / Linux / WSL / macOS / Android）；注册 `env_probe` / `gitbash`（全环境第一优先）/ `pwsh` 工具 |
+| `router-progressive` | `dsh-preset-big-fat-whale-maid-adaptive/router-progressive.mjs` | 任务模式路由：注入 react/spec/weak 叠加句到 persona；注册 `dev_router_status` / `delivery_check`；**不做任何工具门控** |
+| `env-probe` | `dsh-preset-big-fat-whale-maid-adaptive/env-probe.mjs` | 挂载时探测静态环境；每会话首轮注入英文**系统环境报告**（OS/内核/架构、CPU/内存、用户与 home/tmp、cwd 世界、shell 与路径规则；覆盖 Windows / Linux / WSL / macOS / Android）；注册 `env_probe` / `gitbash`（全环境第一优先）/ `pwsh` 工具 |
 | `persona` | `@deepseek-ai/dsh-persona` | 女仆长人设 + 外貌设定 + 任务模式路由说明；`complete: true`、`includeRuntimeContext: false` |
-| `instruction-hint` | `./instruction-hint.mjs` | 首次工具调用/回复后注入一次指令文件短提示（非命令式措辞，randomUUID 唯一 id，全链探测 AGENTS.md/CLAUDE.md） |
+| `instruction-hint` | `dsh-preset-big-fat-whale-maid-adaptive/instruction-hint.mjs` | 首次工具调用/回复后注入一次指令文件短提示（非命令式措辞，randomUUID 唯一 id，全链探测 AGENTS.md/CLAUDE.md） |
 | `native-persistent-shell` | cordis:group，isolate `terminals` | 非 win32 提供 Minimal 同款持久 PTY bash（工具名 `bash`）；`disabled: win32` |
-| `wsl-bash` | `./wsl-bash.mjs` | 仅 win32 启用；`disabled: !!js process.platform !== 'win32' \|\| /[\\/]wsl-/.test(baseUrl)`（`wsl-` 自禁用让位给自动变体的 bash） |
+| `wsl-bash` | `dsh-preset-big-fat-whale-maid-adaptive/wsl-bash.mjs` | 仅 win32 启用；`disabled: !!js process.platform !== 'win32' \|\| /[\\/]wsl-/.test(baseUrl)`（`wsl-` 自禁用让位给自动变体的 bash） |
 | `str-replace-editor` | 官方行（host fs） | 仅 win32 启用 + `wsl-` 自禁用；win32 上用宿主文件系统（Windows 路径与 `\\wsl.localhost\<distro>\…` 均可） |
 | `bootstrap-filesystem` | cordis:group，isolate `fs` | 非 win32 提供 Minimal 同款 fs-local + str_replace_editor；`disabled: win32` |
 | `tool-fs` | 官方行 | 全平台注册，走宿主文件系统（win32 上 WSL 文件经 UNC 访问） |
@@ -174,7 +180,7 @@ big-fat-whale-maid-adaptive/
 |---|---|---|
 | `Invalid schema ... got 'type: null'` | 工具 `parameters` 是空对象 `{}` | 用 `toJsonSchema({})` 或显式 object-rooted JSON Schema |
 | `tool "bash" is already registered in this scope` | 同层两个 bash 提供者 | 检查平台 disabled 互斥与 `/[\\/]wsl-/.test(baseUrl)` 自禁用 |
-| 挂载报缺失 `./xxx.mjs` | 文件未复制 | 确认 9 个运行文件齐全 |
+| 挂载报 `never started`（某行） | 该行模块 import 失败——**Loader 对导入失败只记日志不抛错**，审计遂报 "never started" | 先确认该行是包内子路径且 `package.json` 的 `exports` 放行了它；相对路径 `./x.mjs` 在此处**必然失败**（解析基准是 profile 目录，不是 bundle 目录） |
 | Windows 上 bash 调用失败 `terminal inspection is unsupported` | 模型拿到的是 PTY 持久 bash（native-persistent-shell 未被 win32 禁用） | 复核 disabled 表达式 |
 | bash 报 `workdir is not in any known world` | workdir 不是 UNC / Linux / 盘符三者之一 | 传入合法路径或让模型传绝对路径 |
 | pwsh 在 WSL 工作区里 spawn 失败 | 旧版把 Linux/UNC workdir 直接当 Windows 进程 cwd | 已修复（v3）：非盘符路径兜底 `%SystemRoot%`；命令内可用 `Set-Location` 切换目录 |

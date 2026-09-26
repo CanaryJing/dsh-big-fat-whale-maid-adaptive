@@ -43,7 +43,9 @@
 > **⚠️ 安装方式已随 DSH 变更**：DSH 0.1.6 起 agent preset 改为**bundle 声明**，旧格式的
 > `$DSH_HOME/.agent-presets/<id>/` 目录**已不再被读取**（官方说明原话：*"Nothing reads that
 > directory any more."*）。本仓库因此自带 bundle 声明（`package.json` + `cordis.patch.yml`），
-> **整个文件夹就是一个可直接安装的 bundle**，插件模块以相对路径锚定在本目录内，仍然自包含。
+> **整个文件夹就是一个可直接安装的 bundle**，仍然自包含。本地插件模块以**包内子路径**引用
+> （`dsh-preset-big-fat-whale-maid-adaptive/<file>.mjs`，由 `package.json` 的 `exports` 放行），
+> 而不是相对路径——预设声明内部的解析基准是 **profile 目录**，相对路径会全部解析失败。
 
 1. **前置条件**：已安装 DSH CLI 与 `dsh web`（0.1.6 及以上）。Windows 宿主想用「bash 直达 WSL」功能时，需先安装任意 WSL 发行版（如 `wsl --install -d kali-linux`）。
 2. **把本文件夹作为 bundle 加进 profile**（`dsh plugin` 转发给 pnpm，并在成功后自动把本包追加进 `dsh.profile.bundles`）：
@@ -65,7 +67,7 @@
 ```
 big-fat-whale-maid-adaptive/
 ├── package.json            # bundle 声明：dsh.bundle.patch → ./cordis.patch.yml（整个文件夹即可安装）
-├── cordis.patch.yml        # 【现行·权威】agent preset 声明 + 全部插件行（./*.mjs 相对本目录锚定）
+├── cordis.patch.yml        # 【现行·权威】agent preset 声明 + 全部插件行（本地模块按包内子路径引用）
 ├── agent.cordis.yml        # 【旧格式·备查】0.1.5/0.1.6 的 Agent 组合定义（已被 cordis.patch.yml 取代）
 ├── preset.yml              # 【旧格式·备查】旧模式元数据（name/description/order 已并入 cordis.patch.yml）
 ├── router-core.mjs         # 思维模式路由核心（纯函数库，无 apply，不作为插件装载）
@@ -119,7 +121,8 @@ big-fat-whale-maid-adaptive/
 
 ## 七、版本历史
 
-- **v2.1.0**（2026-09）：**迁移到 DSH bundle 声明格式**。DSH 0.1.6/0.1.7 起 agent preset 由 bundle patch 里的 `@deepseek-ai/dsh-agent-preset` 声明行定义，旧的 `$DSH_HOME/.agent-presets/<id>/` 目录不再被读取——本仓库新增 `package.json`（`dsh.bundle.patch`）与 `cordis.patch.yml`（preset 声明 + 插件行），文件夹本身成为可安装 bundle；`preset.yml` / `agent.cordis.yml` 退为旧格式备查。同时按 0.1.7 的实际 schema 对齐插件行：workflow 引擎行由已移除的 `@deepseek-ai/dsh-workflow-worker-thread` 换为 `@deepseek-ai/dsh-workflow-ptc`（`provider: spawn`），补上 0.1.6+ 新增的 `present`（`@deepseek-ai/dsh-tool-present`）与 `command-goal`；修复 `instruction-hint` 的「每会话仅一次」持久化判据与它自己写入的消息来源（`kind: plugin` + 插件 id）不一致、导致宿主重启后重复注入一次提示的问题。
+- **v2.1.1**（2026-09）：**修 v2.1.0 的致命装载缺陷——改用包内子路径引用本地插件**。v2.1.0 把预设内部的插件行写成相对路径（`./env-probe.mjs?v=2`），以为它锚定在 patch 文件旁；实测（探针取证）**预设声明内部的行拿到的解析基准是 profile 目录，不是 bundle 目录**，于是 5 个本地插件全部 import 失败，而 `cordis-plugin-loader` 的 `_init()` 对导入失败**只记日志、不抛错**（`entry.fiber` 保持 undefined），挂载审计遂把每一行报成 `never started`，整个预设显示为**加载失败**。现改为 `dsh-preset-big-fat-whale-maid-adaptive/<file>.mjs` 包内子路径（由 `package.json` 的 `exports` 放行），该写法以 profile 目录为基准解析，正是 bundle 的安装位置；同时去掉 `?v=N` 缓存查询串（查询串会破坏 `exports` 子路径匹配）。已在 Windows 与 Android 两端用「模块自报家门」探针实证：修复后挂载内各行的 `apply` 全部执行。
+- **v2.1.0**（2026-09）：**迁移到 DSH bundle 声明格式**（⚠️ **此版装载失败，请用 v2.1.1**，原因见上）。DSH 0.1.6/0.1.7 起 agent preset 由 bundle patch 里的 `@deepseek-ai/dsh-agent-preset` 声明行定义，旧的 `$DSH_HOME/.agent-presets/<id>/` 目录不再被读取——本仓库新增 `package.json`（`dsh.bundle.patch`）与 `cordis.patch.yml`（preset 声明 + 插件行），文件夹本身成为可安装 bundle；`preset.yml` / `agent.cordis.yml` 退为旧格式备查。同时按 0.1.7 的实际 schema 对齐插件行：workflow 引擎行由已移除的 `@deepseek-ai/dsh-workflow-worker-thread` 换为 `@deepseek-ai/dsh-workflow-ptc`（`provider: spawn`），补上 0.1.6+ 新增的 `present`（`@deepseek-ai/dsh-tool-present`）与 `command-goal`；修复 `instruction-hint` 的「每会话仅一次」持久化判据与它自己写入的消息来源（`kind: plugin` + 插件 id）不一致、导致宿主重启后重复注入一次提示的问题。
 - **v2.0.1**（2026-09）：修复 `env_probe` 工具回归——v2.0.0 把 `shellRoutes` 更名为 `shellSummary` 时，漏改了 `env_probe` 工具内唯一的调用点（该行本身即为从未被使用的死代码，故长期未被发现），导致「重新探测环境」必抛 `ReferenceError: shellRoutes is not defined`，环境报告无法手动刷新；现已删除该死代码行，`env_probe` 恢复可用。
 - **v2.0.0**（2026-09）：全量工具一次性开放（移除首轮锚定 / 注入门控 / 四阶段渐进披露 / 按需解锁）；系统环境报告覆盖 Windows / Linux / WSL / macOS / Android；`gitbash` 全环境第一优先（含 WSL UNC 工作目录）；更名「DS女仆长模式」；不再采用风神 / 明神的上游方案。
 - **v1.x**：首轮 Linux 极简双工具锚定 + 四阶段渐进披露 + 环境 / 世界路由（改编自风神 / 明神上游）。
