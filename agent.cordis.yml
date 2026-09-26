@@ -1,3 +1,8 @@
+# [旧格式·备查] DSH ≤ 0.1.5 的 Agent-plane 组合定义。
+# DSH 0.1.6 起 agent preset 改由 bundle 声明定义，现行权威文件是同目录的
+# `cordis.patch.yml`（本文件的插件行已整体迁入其中，并按 0.1.7 的实际 schema
+# 做了对齐）。本文件仅作历史对照，不参与装载。
+#
 # The `big-fat-whale-maid-adaptive` preset: DS女仆长模式 (whale-maid, environment-adaptive).
 #
 # Design goals:

@@ -4,7 +4,7 @@
 >
 > DSH（DeepSeek Harness）自定义 Agent Preset 插件：**全量工具一次性开放**——所有已注册工具从第一轮起全部可见（无首轮锚定、无四阶段渐进披露、无按需解锁）；自动探测宿主系统（Windows / Linux / WSL / macOS / Android）与工作目录所属世界，`gitbash` **全环境第一优先**（Windows 母系统、WSL 文件经 UNC、通用 shell 任务；`pwsh` 兜底）、`bash` 直达 WSL 发行版；任务感知思维模式路由（react / spec / weak）与 `delivery_check` 交付 gate；全程保持蓝发蓝瞳鲸鱼娘女仆长人设。
 >
-> **单预设自包含 · 零外部插件依赖**：不依赖 `dsh-wsl-workspace`，复制一个文件夹即可使用。
+> **单预设自包含 · 零外部插件依赖**：不依赖 `dsh-wsl-workspace`，整个文件夹本身就是一个可安装的 DSH bundle（`package.json` + `cordis.patch.yml` + 本地 `.mjs` 插件），装上即用。
 
 ---
 
@@ -38,15 +38,24 @@
 
 ---
 
-## 三、快速安装（三步）
+## 三、快速安装（DSH ≥ 0.1.6）
 
-1. **前置条件**：已安装 DSH CLI 与 `dsh web`。Windows 宿主想用「bash 直达 WSL」功能时，需先安装任意 WSL 发行版（如 `wsl --install -d kali-linux`）。
-2. **复制本项目文件夹**到用户预设根目录：
+> **⚠️ 安装方式已随 DSH 变更**：DSH 0.1.6 起 agent preset 改为**bundle 声明**，旧格式的
+> `$DSH_HOME/.agent-presets/<id>/` 目录**已不再被读取**（官方说明原话：*"Nothing reads that
+> directory any more."*）。本仓库因此自带 bundle 声明（`package.json` + `cordis.patch.yml`），
+> **整个文件夹就是一个可直接安装的 bundle**，插件模块以相对路径锚定在本目录内，仍然自包含。
+
+1. **前置条件**：已安装 DSH CLI 与 `dsh web`（0.1.6 及以上）。Windows 宿主想用「bash 直达 WSL」功能时，需先安装任意 WSL 发行版（如 `wsl --install -d kali-linux`）。
+2. **把本文件夹作为 bundle 加进 profile**（`dsh plugin` 转发给 pnpm，并在成功后自动把本包追加进 `dsh.profile.bundles`）：
    ```powershell
-   Copy-Item -Recurse . "$env:USERPROFILE\.dsh\.agent-presets\big-fat-whale-maid-adaptive"
+   dsh plugin --profile web add "file:<本文件夹的绝对路径>"
    ```
-3. **重启 `dsh web`**，在模式选择器中选择「DS女仆长模式」。
+   若 pnpm 被 `minimumReleaseAge` 一类供应链策略拦下（报 `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`，与预设本身无关），可改为手工登记：把本文件夹联进 `profiles/web/node_modules/`，再把包名 `dsh-preset-big-fat-whale-maid-adaptive` 追加进 `profiles/web/package.json` 的 `dsh.profile.bundles`。
+3. **重启 `dsh web`**（或依赖 HMR 热加载），在**新建会话**的模式选择器中选择「DS女仆长模式」。
 
+> **升级**：`git pull` 之后需**重新执行一次第 2 步**——bundle 是安装时的快照，不会跟随工作区改动。
+> **离线校验**（可选，工作区配套脚本）：`node 脚本/verify-dsh-preset-bundle.mjs <本文件夹>`，会逐行对照已装 DSH 的真实 schema 校验每个插件行的 config。
+>
 > 详细安装方法、验证清单与故障诊断见 **[AIreadme.md](./AIreadme.md)**。
 
 ---
@@ -55,8 +64,10 @@
 
 ```
 big-fat-whale-maid-adaptive/
-├── agent.cordis.yml        # Agent 组合定义（全量工具开放 + 环境路由 + 模式路由 + 人设）
-├── preset.yml              # 模式列表里显示的元数据
+├── package.json            # bundle 声明：dsh.bundle.patch → ./cordis.patch.yml（整个文件夹即可安装）
+├── cordis.patch.yml        # 【现行·权威】agent preset 声明 + 全部插件行（./*.mjs 相对本目录锚定）
+├── agent.cordis.yml        # 【旧格式·备查】0.1.5/0.1.6 的 Agent 组合定义（已被 cordis.patch.yml 取代）
+├── preset.yml              # 【旧格式·备查】旧模式元数据（name/description/order 已并入 cordis.patch.yml）
 ├── router-core.mjs         # 思维模式路由核心（纯函数库，无 apply，不作为插件装载）
 ├── router-progressive.mjs  # 任务模式路由 + delivery_check + dev_router_status（不再做渐进披露）
 ├── compaction-epoch.mjs    # epoch 感知晋升追踪（instruction-hint 使用）
@@ -108,6 +119,7 @@ big-fat-whale-maid-adaptive/
 
 ## 七、版本历史
 
+- **v2.1.0**（2026-09）：**迁移到 DSH bundle 声明格式**。DSH 0.1.6/0.1.7 起 agent preset 由 bundle patch 里的 `@deepseek-ai/dsh-agent-preset` 声明行定义，旧的 `$DSH_HOME/.agent-presets/<id>/` 目录不再被读取——本仓库新增 `package.json`（`dsh.bundle.patch`）与 `cordis.patch.yml`（preset 声明 + 插件行），文件夹本身成为可安装 bundle；`preset.yml` / `agent.cordis.yml` 退为旧格式备查。同时按 0.1.7 的实际 schema 对齐插件行：workflow 引擎行由已移除的 `@deepseek-ai/dsh-workflow-worker-thread` 换为 `@deepseek-ai/dsh-workflow-ptc`（`provider: spawn`），补上 0.1.6+ 新增的 `present`（`@deepseek-ai/dsh-tool-present`）与 `command-goal`；修复 `instruction-hint` 的「每会话仅一次」持久化判据与它自己写入的消息来源（`kind: plugin` + 插件 id）不一致、导致宿主重启后重复注入一次提示的问题。
 - **v2.0.1**（2026-09）：修复 `env_probe` 工具回归——v2.0.0 把 `shellRoutes` 更名为 `shellSummary` 时，漏改了 `env_probe` 工具内唯一的调用点（该行本身即为从未被使用的死代码，故长期未被发现），导致「重新探测环境」必抛 `ReferenceError: shellRoutes is not defined`，环境报告无法手动刷新；现已删除该死代码行，`env_probe` 恢复可用。
 - **v2.0.0**（2026-09）：全量工具一次性开放（移除首轮锚定 / 注入门控 / 四阶段渐进披露 / 按需解锁）；系统环境报告覆盖 Windows / Linux / WSL / macOS / Android；`gitbash` 全环境第一优先（含 WSL UNC 工作目录）；更名「DS女仆长模式」；不再采用风神 / 明神的上游方案。
 - **v1.x**：首轮 Linux 极简双工具锚定 + 四阶段渐进披露 + 环境 / 世界路由（改编自风神 / 明神上游）。

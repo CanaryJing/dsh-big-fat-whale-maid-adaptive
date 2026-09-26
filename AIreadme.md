@@ -20,35 +20,60 @@
 
 ## 2. 安装步骤
 
-### 2.1 Windows 宿主（PowerShell）
+> **格式代际（务必先读）**：DSH 0.1.6 起 agent preset 由 **bundle 声明**定义，旧格式的
+> `$DSH_HOME/.agent-presets/<id>/` 目录**已不再被读取**。本仓库自带 bundle 声明，所以
+> **安装的对象是整个文件夹**，不再"挑 9 个文件复制过去"。
+
+### 2.1 作为 bundle 安装（DSH ≥ 0.1.6，推荐）
 
 ```powershell
-$src  = "$PWD\big-fat-whale-maid-adaptive"   # 或填写本项目实际路径
-$dst  = "$env:USERPROFILE\.dsh\.agent-presets\big-fat-whale-maid-adaptive"
-New-Item -ItemType Directory -Force -Path $dst | Out-Null
-Copy-Item "$src\agent.cordis.yml", "$src\preset.yml", `
-  "$src\router-core.mjs", "$src\router-progressive.mjs", `
-  "$src\compaction-epoch.mjs", "$src\skill-search.mjs", "$src\instruction-hint.mjs", `
-  "$src\env-probe.mjs", "$src\wsl-bash.mjs" $dst -Force
+# Windows
+dsh plugin --profile web add "file:D:/path/to/big-fat-whale-maid-adaptive"
 ```
-
-### 2.2 Linux 宿主（bash）
 
 ```bash
-SRC="$PWD/big-fat-whale-maid-adaptive"        # 或填写本项目实际路径
-DST="$HOME/.dsh/.agent-presets/big-fat-whale-maid-adaptive"
-mkdir -p "$DST"
-cp "$SRC"/agent.cordis.yml "$SRC"/preset.yml \
-   "$SRC"/router-core.mjs "$SRC"/router-progressive.mjs \
-   "$SRC"/compaction-epoch.mjs "$SRC"/skill-search.mjs "$SRC"/instruction-hint.mjs \
-   "$SRC"/env-probe.mjs "$SRC"/wsl-bash.mjs "$DST"/
+# Linux / macOS
+dsh plugin --profile web add "file:/path/to/big-fat-whale-maid-adaptive"
 ```
+
+`dsh plugin` 把参数转发给 profile 目录里的 pnpm，成功后会**自动**把包名
+`dsh-preset-big-fat-whale-maid-adaptive` 追加进该 profile 的 `dsh.profile.bundles`。
+
+**若 pnpm 被供应链策略拦下**（`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` 等，与预设本身无关，
+缘于 lockfile 里已有包发布时间过新），可手工登记两步，无需 pnpm：
+
+1. 把本文件夹**联进** profile 的 `node_modules`：
+   ```powershell
+   New-Item -ItemType Junction `
+     -Path "$env:USERPROFILE\.dsh\profiles\web\node_modules\dsh-preset-big-fat-whale-maid-adaptive" `
+     -Target "D:/path/to/big-fat-whale-maid-adaptive"
+   ```
+   ```bash
+   ln -s /path/to/big-fat-whale-maid-adaptive ~/.dsh/profiles/web/node_modules/dsh-preset-big-fat-whale-maid-adaptive
+   ```
+2. 在该 profile 的 `package.json` 里登记：`dependencies` 加
+   `"dsh-preset-big-fat-whale-maid-adaptive": "file:<绝对路径>"`，并把同一个包名**追加**到
+   `dsh.profile.bundles` 数组末尾。
+
+> 自检：`dsh --profile web --dump-config` 应能看到 `- id: preset-big-fat-whale-maid-adaptive`
+> （且 stderr 无 `skipping profile bundle` 警告）。
+
+### 2.2 旧格式（DSH ≤ 0.1.5，仅历史环境）
+
+把 `agent.cordis.yml`、`preset.yml` 与 9 个运行期 `.mjs` 复制到
+`$DSH_HOME/.agent-presets/big-fat-whale-maid-adaptive/`。**0.1.6 及以上无效**，仅作备查。
 
 ### 2.3 生效
 
-重启 `dsh web`，新建会话并在模式选择器中选择「**DS女仆长模式**」。
+重启 `dsh web`（或依赖 HMR 热加载），新建会话并在模式选择器中选择「**DS女仆长模式**」。
+`order: 26` 让它排在四个内置模式（standard / ptc / minimal / cordis）之后。
 
-> 注意：只复制插件运行所需的 **9 个文件**即可；`context-gate.mjs`、`tool-bootstrap.mjs`、`dev-tool-search.mjs` 是已卸载的旧机制源码（仅备查，不参与组合），`README.md`、`AI.md` 与 `AIreadme.md` 是文档，均可选择性复制。
+> 升级：`git pull` 后需**重跑 2.1**。bundle 在安装时被 pnpm 取为快照（硬链接），
+> 不会跟随工作区改动。
+>
+> 注意：`context-gate.mjs`、`tool-bootstrap.mjs`、`dev-tool-search.mjs` 是已卸载的旧机制源码
+> （仅备查，不参与组合，`cordis.patch.yml` 不装载它们）；`agent.cordis.yml` 与 `preset.yml`
+> 是旧格式备查文件。
 
 ---
 
@@ -60,7 +85,7 @@ cp "$SRC"/agent.cordis.yml "$SRC"/preset.yml \
   ```bash
   for f in *.mjs; do node --check "$f" || exit 1; done
   ```
-- [ ] `agent.cordis.yml` 顶层 `- id:` 无重复；`name:` 行无绝对路径、无 `dsh-wsl-workspace` 依赖。
+- [ ] `cordis.patch.yml` 中 preset 声明的 `plugins` 顶层 `- id:` 无重复；`name:` 行无绝对路径、无 `dsh-wsl-workspace` 依赖；`./*.mjs` 相对路径文件都存在。
 - [ ] 组合中**不含** `context-gate` / `tool-bootstrap` / `dev-tool-search` 行（全量开放策略）。
 - [ ] 平台分派互斥：win32 与非 win32 各只有一组 bash/editor 提供者；`wsl-bash` 与顶层 `str-replace-editor` 的 disabled 表达式包含 `/[\\/]wsl-/.test(baseUrl)` 自禁用。
 - [ ] 服务行带 isolate realm：`native-persistent-shell`（terminals）、`bootstrap-filesystem`（fs）。
@@ -83,8 +108,10 @@ cp "$SRC"/agent.cordis.yml "$SRC"/preset.yml \
 
 ```
 big-fat-whale-maid-adaptive/
-├── agent.cordis.yml        # Agent-plane Cordis 组合（全量工具开放）
-├── preset.yml              # 展示元数据：name / description / order
+├── package.json            # bundle 声明：dsh.bundle.patch → ./cordis.patch.yml
+├── cordis.patch.yml        # 【现行·权威】preset 声明（id/name/description/order/plugins）+ 全部插件行
+├── agent.cordis.yml        # 【旧格式·备查】0.1.5/0.1.6 的 Agent-plane 组合（已被取代）
+├── preset.yml              # 【旧格式·备查】展示元数据：name / description / order
 ├── router-core.mjs         # 思维模式路由核心（纯函数库，无 apply，不作为插件装载）
 ├── router-progressive.mjs  # 任务模式路由 + delivery_check + dev_router_status（无工具门控）
 ├── compaction-epoch.mjs    # epoch 感知晋升追踪（instruction-hint 使用）
@@ -101,7 +128,7 @@ big-fat-whale-maid-adaptive/
 └── CREDITS.md              # 改编来源与致谢（上游插件）
 ```
 
-### 4.1 `agent.cordis.yml` 顶层行（按注册顺序）
+### 4.1 `cordis.patch.yml` 中的插件行（按注册顺序）
 
 | id | 类型 | 作用 |
 |---|---|---|
@@ -151,7 +178,7 @@ big-fat-whale-maid-adaptive/
 | Windows 上 bash 调用失败 `terminal inspection is unsupported` | 模型拿到的是 PTY 持久 bash（native-persistent-shell 未被 win32 禁用） | 复核 disabled 表达式 |
 | bash 报 `workdir is not in any known world` | workdir 不是 UNC / Linux / 盘符三者之一 | 传入合法路径或让模型传绝对路径 |
 | pwsh 在 WSL 工作区里 spawn 失败 | 旧版把 Linux/UNC workdir 直接当 Windows 进程 cwd | 已修复（v3）：非盘符路径兜底 `%SystemRoot%`；命令内可用 `Set-Location` 切换目录 |
-| 工具不全 | 组合中重新引入了过滤插件，或工具行被平台 disabled | 本预设不做门控：检查 agent.cordis.yml 行与 disabled 表达式 |
+| 工具不全 | 组合中重新引入了过滤插件，或工具行被平台 disabled | 本预设不做门控：检查 `cordis.patch.yml` 行与 disabled 表达式 |
 | 简报缺失 | pre-step 注入异常被静默跳过 | 查 host 日志 env-probe 警告；`env_probe` 工具可手动复查 |
 
 ---
@@ -163,5 +190,5 @@ big-fat-whale-maid-adaptive/
 - 改交付 gate：`router-progressive.mjs` 的 `delivery_check` 描述与校验逻辑。
 - 改 WSL bash 行为：`wsl-bash` 行的 `config`（`distro`、`username`、`timeoutMs`、`maxOutputBytes`、`probeTimeoutMs`）。
 - 加/减能力：增删顶层行；新增服务行必须带 isolate realm，纯消费行保持松散。
-- 改显示名：`preset.yml`。
-- 派生新预设：复制整个目录为新 id（`[a-z0-9][a-z0-9-]*`），改 `preset.yml` 后重启。
+- 改显示名：`cordis.patch.yml` 里 preset 声明的 `config.name`（`preset.yml` 已退为旧格式备查）。
+- 派生新预设：复制整个目录，改 `package.json` 的 `name`、`cordis.patch.yml` 的声明行 id（`preset-<id>`）与 `config.id`（`[a-z0-9][a-z0-9-]*`），重新作为 bundle 装入并重启。

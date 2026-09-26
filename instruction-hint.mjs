@@ -45,11 +45,11 @@
  *    non-claimed messages while unpromoted).
  *
  * ROW ORDER: this plugin registers its `agent/pre-step` handler with
- * `prepend: true` and after `context-gate`/`tool-bootstrap`, so it runs
- * inside the gate's outermost strip — but it emits AFTER promotion, when the
- * strip is inactive. The hint source kind is `instruction-hint`, which is
- * not in the gate's claimed-baseline allowlist, so the gate can strip it
- * only while the session is unpromoted (never the intended path).
+ * `prepend: true`, so it runs outermost in that waterfall and emits only
+ * AFTER promotion. The hint carries {@link HINT_SOURCE} (`kind: 'plugin'` +
+ * this preset's plugin id); the durability scan recognizes that source and the
+ * legacy `instruction-hint` kind, so a replay of an older session log cannot
+ * produce a second copy.
  */
 
 import { randomUUID } from 'node:crypto'
@@ -68,6 +68,32 @@ const PROMOTE_EVENTS = {
 /** Candidate file names, in probe order, for the project chain and user-global. */
 const PROJECT_CANDIDATES = ['AGENTS.md', 'CLAUDE.md', 'AGENTS.local.md', 'CLAUDE.local.md']
 const USER_GLOBAL_CANDIDATE = 'AGENTS.md'
+
+/** This preset's plugin id — carried on every message this plugin injects. */
+const PLUGIN_ID = 'big-fat-whale-maid-adaptive'
+
+/**
+ * The `source` this plugin stamps on the hint message. Message sources are a
+ * merge-extensible sum type with no shared catch-all `plugin` kind, so the
+ * runtime only requires a non-empty `kind` string (see
+ * `assertMessageEventShape` in `@deepseek-ai/dsh-session`); the plugin id rides
+ * alongside it so a reader can attribute the message to this preset.
+ */
+const HINT_SOURCE = { kind: 'plugin', plugin: PLUGIN_ID }
+
+/**
+ * Whether a durable message is THIS plugin's instruction hint. Accepts the
+ * legacy `instruction-hint` kind as well, so sessions logged before the source
+ * was migrated do not receive a second copy after a host restart — the
+ * durability scan below is the restart-safe guard, and it is only as good as
+ * this predicate's agreement with `HINT_SOURCE`.
+ */
+const isOwnHint = (message) => {
+  const source = message?.data?.source
+  if (source === undefined || source === null) return false
+  if (source.kind === HINT_SOURCE.kind && source.plugin === PLUGIN_ID) return true
+  return source.kind === 'instruction-hint'
+}
 
 function parsePromoteOn(value) {
   if (value === undefined || value === 'either') return PROMOTE_EVENTS.either
@@ -162,14 +188,14 @@ export function apply(ctx, config) {
   const hintIsDurable = (session) => {
     const known = hinted.get(session.id)
     if (known !== undefined) return known
-    const found = (Array.isArray((session.snapshotEvents ? session.snapshotEvents() : (session.events ?? []))) ? (session.snapshotEvents ? session.snapshotEvents() : (session.events ?? [])) : []).some((event) =>
-      event.type === 'user/message' && event.data?.source?.kind === 'instruction-hint',
+    const found = (Array.isArray((session.snapshotEvents ? session.snapshotEvents() : (session.events ?? []))) ? (session.snapshotEvents ? session.snapshotEvents() : (session.events ?? [])) : []).some(
+      (event) => event.type === 'user/message' && isOwnHint(event),
     )
     hinted.set(session.id, found)
     return found
   }
   ctx.on('session/event', (session, event) => {
-    if (event.type === 'user/message' && event.data?.source?.kind === 'instruction-hint') {
+    if (event.type === 'user/message' && isOwnHint(event)) {
       hinted.set(session.id, true)
     }
   })
@@ -247,7 +273,7 @@ export function apply(ctx, config) {
           id: `instruction-hint-${session.id}-${randomUUID()}`,
           role: 'user',
           content: [{ type: 'text', text }],
-          source: { kind: 'instruction-hint', form: 'hint' },
+          source: HINT_SOURCE,
         }],
       }
     } catch (error) {
