@@ -42,6 +42,14 @@ dsh plugin --profile web add "file:/path/to/big-fat-whale-maid-adaptive"
 > 本 bundle 因此写作包内子路径 `dsh-preset-big-fat-whale-maid-adaptive/<file>.mjs`，并在
 > `package.json` 的 `exports` 里逐条放行（也不要加 `?v=` 查询串，查询串会破坏 exports 匹配）。
 
+> **⚠️ 消息来源必须用 producer-owned kind（v2.1.2 起）**：DSH **0.1.7** 引入会话格式 **v4**，
+> 它**退役了** v3 的裸写法 `source: { kind: 'plugin', plugin: <id> }`——`dsh-session-format-v3-to-v4`
+> 的校验器 `source()` 对它会直接抛 **`format v4 message requires a producer-owned source kind`**。
+> 插件现在必须盖**自己的** kind：`{ kind: 'plugin:<id>' }`。本预设两处注入都挂在 `agent/pre-step`
+> （每轮开始触发），所以旧写法会让**每一轮对话都运行失败**。若你在此预设里新增会注入消息的模块，
+> 请沿用 `kind: 'plugin:big-fat-whale-maid-adaptive'`——它也正是 DSH 自带 v3→v4 迁移函数
+> 对未登记插件推导出的形式，新旧日志因此读回同一个形状。
+
 `dsh plugin` 把参数转发给 profile 目录里的 pnpm，成功后会**自动**把包名
 `dsh-preset-big-fat-whale-maid-adaptive` 追加进该 profile 的 `dsh.profile.bundles`。
 
@@ -181,6 +189,7 @@ big-fat-whale-maid-adaptive/
 | `Invalid schema ... got 'type: null'` | 工具 `parameters` 是空对象 `{}` | 用 `toJsonSchema({})` 或显式 object-rooted JSON Schema |
 | `tool "bash" is already registered in this scope` | 同层两个 bash 提供者 | 检查平台 disabled 互斥与 `/[\\/]wsl-/.test(baseUrl)` 自禁用 |
 | 挂载报 `never started`（某行） | 该行模块 import 失败——**Loader 对导入失败只记日志不抛错**，审计遂报 "never started" | 先确认该行是包内子路径且 `package.json` 的 `exports` 放行了它；相对路径 `./x.mjs` 在此处**必然失败**（解析基准是 profile 目录，不是 bundle 目录） |
+| **每轮**对话都失败：`format v4 message requires a producer-owned source kind` | 注入的消息仍写 v3 的裸来源 `{ kind: 'plugin', plugin: <id> }`，而 DSH 0.1.7 的会话格式 v4 已退役该写法 | 改用插件自身的 producer kind `{ kind: 'plugin:<id>' }`（v2.1.2 已修；新增注入模块时沿用同一形式） |
 | Windows 上 bash 调用失败 `terminal inspection is unsupported` | 模型拿到的是 PTY 持久 bash（native-persistent-shell 未被 win32 禁用） | 复核 disabled 表达式 |
 | bash 报 `workdir is not in any known world` | workdir 不是 UNC / Linux / 盘符三者之一 | 传入合法路径或让模型传绝对路径 |
 | pwsh 在 WSL 工作区里 spawn 失败 | 旧版把 Linux/UNC workdir 直接当 Windows 进程 cwd | 已修复（v3）：非盘符路径兜底 `%SystemRoot%`；命令内可用 `Set-Location` 切换目录 |

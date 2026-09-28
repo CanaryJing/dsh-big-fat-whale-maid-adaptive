@@ -46,9 +46,9 @@
  *
  * ROW ORDER: this plugin registers its `agent/pre-step` handler with
  * `prepend: true`, so it runs outermost in that waterfall and emits only
- * AFTER promotion. The hint carries {@link HINT_SOURCE} (`kind: 'plugin'` +
- * this preset's plugin id); the durability scan recognizes that source and the
- * legacy `instruction-hint` kind, so a replay of an older session log cannot
+ * AFTER promotion. The hint carries {@link HINT_SOURCE} (its own
+ * `plugin:<id>` producer kind); the durability scan recognizes that source and
+ * the legacy `instruction-hint` kind, so a replay of an older session log cannot
  * produce a second copy.
  */
 
@@ -79,7 +79,7 @@ const PLUGIN_ID = 'big-fat-whale-maid-adaptive'
  * `assertMessageEventShape` in `@deepseek-ai/dsh-session`); the plugin id rides
  * alongside it so a reader can attribute the message to this preset.
  */
-const HINT_SOURCE = { kind: 'plugin', plugin: PLUGIN_ID }
+const HINT_SOURCE = { kind: 'plugin:' + PLUGIN_ID }
 
 /**
  * Whether a durable message is THIS plugin's instruction hint. Accepts the
@@ -91,7 +91,11 @@ const HINT_SOURCE = { kind: 'plugin', plugin: PLUGIN_ID }
 const isOwnHint = (message) => {
   const source = message?.data?.source
   if (source === undefined || source === null) return false
-  if (source.kind === HINT_SOURCE.kind && source.plugin === PLUGIN_ID) return true
+  if (source.kind === HINT_SOURCE.kind) return true
+  // Session format v4 retired the bare `kind: 'plugin'` + `plugin` pair; rows
+  // written before this plugin switched to its producer-owned kind still carry
+  // that shape, so recognize it as well (otherwise a host restart re-injects).
+  if (source.kind === 'plugin' && source.plugin === PLUGIN_ID) return true
   return source.kind === 'instruction-hint'
 }
 

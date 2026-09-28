@@ -673,7 +673,14 @@ export function apply(ctx, config) {
             id: `env-brief-${session.id}`,
             role: 'user',
             content: [{ type: 'text', text }],
-            source: { kind: 'plugin', plugin: 'big-fat-whale-maid-adaptive' },
+            // Producer-owned source kind. Session format v4 RETIRED the bare
+            // `{ kind: 'plugin', plugin: <id> }` pair (the v3→v4 validator
+            // raises "format v4 message requires a producer-owned source kind"
+            // for it), so a plugin is now identified by its own
+            // `plugin:<id>` kind — exactly what DSH's own v3→v4 migration
+            // derives for rows written by older versions, so both generations
+            // read back under one shape.
+            source: { kind: 'plugin:big-fat-whale-maid-adaptive' },
           },
         ],
       }
