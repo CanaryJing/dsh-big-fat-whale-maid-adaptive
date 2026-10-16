@@ -25,6 +25,8 @@ Electron `desktop` 使用桌面安装目录下的官方 CLI，例如 Windows：
 
 不要用普通 CLI boot 保留的 `desktop` 档，不要直接复制 `node_modules`（其中可能记录其他 profile 的绝对 store 路径）。
 
+**Tauri 特例：只用真实目录来源，不使用 `file:…tgz`。** Tauri 的启动清理通过 `is_dir()` 判断 `file:` / `link:` 来源，会把本地 tgz 当作悬空依赖并自动卸载。请先解压到持久目录或使用源码目录，再运行 `dsh plugin --profile tauri add "file:/absolute/path/to/preset-directory"`。不要关闭宿主清理机制；来源目录必须保留。安装后重启一次，确认预设仍在且新建会话成功。
+
 包管理失败时先读日志定位供应链/兼容/依赖问题，不要直接修改引擎或清空整个 profile。源码升级需要重新安装，已有进程不保证热更新。未经允许不要为安装强行重启当前会话。
 
 ## 3. PowerShell 配置

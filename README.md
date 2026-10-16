@@ -54,6 +54,7 @@ DSH 的个人工程预设：**全量工具首轮开放、可靠环境简报、�
 ```
 
 - 使用实际宿主对应的官方插件管理 CLI。Electron 的 `desktop` 档须用桌面版自带 CLI 管理。
+- **Tauri profile 使用真实目录来源，不要用 `file:…tgz`。** 已复现 Tauri 启动清理把 tgz 误判为悬空目录并自动卸载；请先解压到持久目录或使用源码目录，再执行 `dsh plugin --profile tauri add "file:/absolute/path/to/preset-directory"`，并保留来源目录。
 - 安装完成后重启对应宿主，并选择「DS女仆长模式」。安装文件成功不代表正在运行的旧实例已经热更新。
 - `git pull` 后须重新安装；本地 `file:` 依赖通常是安装快照，不保证自动跟随源码。
 - 不要直接复制整个 profile 或 `node_modules`；遇供应链/兼容限制应检查原因，不要默默关闭保护。
