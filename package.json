@@ -1,8 +1,8 @@
 {
   "name": "dsh-preset-big-fat-whale-maid-adaptive",
-  "version": "2.1.2",
+  "version": "2.2.0",
   "private": true,
-  "description": "DS女仆长模式 — DSH agent preset bundle (whale-maid, environment-adaptive): full tool catalog, environment report, gitbash-first shell routing, task-mode routing, delivery gate.",
+  "description": "DS女仆长模式 — cached environment + live model identity, safe workdirs, verified PowerShell 7 binding, full tool catalog.",
   "type": "module",
   "license": "MIT",
   "exports": {
@@ -14,11 +14,26 @@
     "./instruction-hint.mjs": "./instruction-hint.mjs",
     "./skill-search.mjs": "./skill-search.mjs",
     "./env-probe.mjs": "./env-probe.mjs",
-    "./wsl-bash.mjs": "./wsl-bash.mjs"
+    "./wsl-bash.mjs": "./wsl-bash.mjs",
+    "./shell-workdir.mjs": "./shell-workdir.mjs",
+    "./powershell-runtime.mjs": "./powershell-runtime.mjs",
+    "./environment-context.mjs": "./environment-context.mjs"
   },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
     }
-  }
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "files": [
+    "*.mjs",
+    "cordis.patch.yml",
+    "README.md",
+    "AI.md",
+    "AIreadme.md",
+    "CREDITS.md",
+    "releases/"
+  ]
 }

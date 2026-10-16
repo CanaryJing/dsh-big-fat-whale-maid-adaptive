@@ -1,209 +1,74 @@
-# AIreadme.md — 安装方法（给 AI / 维护者）
+# 安装与验收手册
 
-> 本文件是「DS女仆长模式」的**安装手册**，面向需要安装、维护、改造或诊断本预设的 AI 智能体与开发者。插件作用说明见 [README.md](./README.md)。
->
-> 本预设**单目录自包含**：不依赖 dsh-wsl-workspace 插件，不需要修改任何绝对路径。
->
-> **工具策略（2026-09 起）**：全量工具一次性开放——无首轮锚定、无渐进披露、无按需解锁；所有已注册工具从第一轮起全部可见。
+项目维护约束见 [AI.md](./AI.md)，功能说明见 [README.md](./README.md)。
 
----
+## 1. 安装对象
 
-## 1. 前置条件
+当前权威文件是 `package.json` + `cordis.patch.yml`。整个包必须一起安装，本地插件通过包内子路径解析。不要挑选几个 `.mjs` 复制到旧 `.agent-presets` 目录，不要改旧 `agent.cordis.yml` / `preset.yml` 来配置现版。
 
-- 已安装 DSH CLI 与 `dsh web`。
-- Windows 宿主若想使用「bash 直达 WSL」功能，需至少安装一个 WSL 发行版（例如 `wsl --install -d kali-linux`），且 `wsl.exe -l -q` 能列出发行版。
-- Windows 宿主若想使用 `gitbash` 工具（全环境第一优先 shell），需安装 Git for Windows（探测顺序：`Program Files\Git\bin\bash.exe` → `Program Files (x86)` → 每用户 `LOCALAPPDATA\Programs\Git`）；未安装时自动回退 `pwsh`。
-- Linux 宿主无额外要求；如希望 `pwsh` 工具可用，可自行安装 PowerShell。
-- 无需安装任何 npm 依赖：全部 `.mjs` 只使用 `node:` 内置模块。
+DSH 官方插件、工具服务、模型提供者由宿主提供。本版在 DSH 0.2.0-rc.2 验证。Windows 的 Git Bash 和 PowerShell 均在母系统执行；WSL Bash 为独立的 Linux 执行世界。没有 WSL 不影响其他工具。
 
----
+## 2. 备份与安装
 
-## 2. 安装步骤
-
-> **格式代际（务必先读）**：DSH 0.1.6 起 agent preset 由 **bundle 声明**定义，旧格式的
-> `$DSH_HOME/.agent-presets/<id>/` 目录**已不再被读取**。本仓库自带 bundle 声明，所以
-> **安装的对象是整个文件夹**，不再"挑 9 个文件复制过去"。
-
-### 2.1 作为 bundle 安装（DSH ≥ 0.1.6，推荐）
-
-```powershell
-# Windows
-dsh plugin --profile web add "file:D:/path/to/big-fat-whale-maid-adaptive"
-```
+先备份**目标 profile** 的 `package.json`、`cordis.patch.yml`、lockfile 和必要的包管理配置；不要读取/传播凭据。保留原有 bundles 和插件，仅更新本预设。
 
 ```bash
-# Linux / macOS
-dsh plugin --profile web add "file:/path/to/big-fat-whale-maid-adaptive"
+# 全局 web 实例
+ dsh plugin --profile web add "file:/absolute/path/to/package-or-release.tgz"
 ```
 
-> **⚠️ 本地插件的引用方式（v2.1.1 起）**：预设声明内部的插件行**不能用相对路径**
-> （`./env-probe.mjs`）——预设子树拿到的解析基准是 **profile 目录**，相对路径必然 import 失败，
-> 而 Loader 对导入失败只记日志、不抛错，挂载审计只会报 `never started`，表现为整个预设「加载失败」。
-> 本 bundle 因此写作包内子路径 `dsh-preset-big-fat-whale-maid-adaptive/<file>.mjs`，并在
-> `package.json` 的 `exports` 里逐条放行（也不要加 `?v=` 查询串，查询串会破坏 exports 匹配）。
+Electron `desktop` 使用桌面安装目录下的官方 CLI，例如 Windows：
 
-> **⚠️ 消息来源必须用 producer-owned kind（v2.1.2 起）**：DSH **0.1.7** 引入会话格式 **v4**，
-> 它**退役了** v3 的裸写法 `source: { kind: 'plugin', plugin: <id> }`——`dsh-session-format-v3-to-v4`
-> 的校验器 `source()` 对它会直接抛 **`format v4 message requires a producer-owned source kind`**。
-> 插件现在必须盖**自己的** kind：`{ kind: 'plugin:<id>' }`。本预设两处注入都挂在 `agent/pre-step`
-> （每轮开始触发），所以旧写法会让**每一轮对话都运行失败**。若你在此预设里新增会注入消息的模块，
-> 请沿用 `kind: 'plugin:big-fat-whale-maid-adaptive'`——它也正是 DSH 自带 v3→v4 迁移函数
-> 对未登记插件推导出的形式，新旧日志因此读回同一个形状。
-
-`dsh plugin` 把参数转发给 profile 目录里的 pnpm，成功后会**自动**把包名
-`dsh-preset-big-fat-whale-maid-adaptive` 追加进该 profile 的 `dsh.profile.bundles`。
-
-**若 pnpm 被供应链策略拦下**（`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` 等，与预设本身无关，
-缘于 lockfile 里已有包发布时间过新），可手工登记两步，无需 pnpm：
-
-1. 把本文件夹**联进** profile 的 `node_modules`：
-   ```powershell
-   New-Item -ItemType Junction `
-     -Path "$env:USERPROFILE\.dsh\profiles\web\node_modules\dsh-preset-big-fat-whale-maid-adaptive" `
-     -Target "D:/path/to/big-fat-whale-maid-adaptive"
-   ```
-   ```bash
-   ln -s /path/to/big-fat-whale-maid-adaptive ~/.dsh/profiles/web/node_modules/dsh-preset-big-fat-whale-maid-adaptive
-   ```
-2. 在该 profile 的 `package.json` 里登记：`dependencies` 加
-   `"dsh-preset-big-fat-whale-maid-adaptive": "file:<绝对路径>"`，并把同一个包名**追加**到
-   `dsh.profile.bundles` 数组末尾。
-
-> 自检：`dsh --profile web --dump-config` 应能看到 `- id: preset-big-fat-whale-maid-adaptive`
-> （且 stderr 无 `skipping profile bundle` 警告）。
-
-### 2.2 旧格式（DSH ≤ 0.1.5，仅历史环境）
-
-把 `agent.cordis.yml`、`preset.yml` 与 9 个运行期 `.mjs` 复制到
-`$DSH_HOME/.agent-presets/big-fat-whale-maid-adaptive/`。**0.1.6 及以上无效**，仅作备查。
-
-### 2.3 生效
-
-重启 `dsh web`（或依赖 HMR 热加载），新建会话并在模式选择器中选择「**DS女仆长模式**」。
-`order: 26` 让它排在四个内置模式（standard / ptc / minimal / cordis）之后。
-
-> 升级：`git pull` 后需**重跑 2.1**。bundle 在安装时被 pnpm 取为快照（硬链接），
-> 不会跟随工作区改动。
->
-> 注意：`context-gate.mjs`、`tool-bootstrap.mjs`、`dev-tool-search.mjs` 是已卸载的旧机制源码
-> （仅备查，不参与组合，`cordis.patch.yml` 不装载它们）；`agent.cordis.yml` 与 `preset.yml`
-> 是旧格式备查文件。
-
----
-
-## 3. 安装后验证清单
-
-发布或安装前逐项检查：
-
-- [ ] 全部 `.mjs` 语法检查通过：
-  ```bash
-  for f in *.mjs; do node --check "$f" || exit 1; done
-  ```
-- [ ] `cordis.patch.yml` 中 preset 声明的 `plugins` 顶层 `- id:` 无重复；`name:` 行无绝对路径、无 `dsh-wsl-workspace` 依赖；本 bundle 自己的模块写作包内子路径（`<包名>/<file>.mjs`）且在 `package.json` 的 `exports` 里都有对应条目、对应文件都存在。
-- [ ] 组合中**不含** `context-gate` / `tool-bootstrap` / `dev-tool-search` 行（全量开放策略）。
-- [ ] 平台分派互斥：win32 与非 win32 各只有一组 bash/editor 提供者；`wsl-bash` 与顶层 `str-replace-editor` 的 disabled 表达式包含 `/[\\/]wsl-/.test(baseUrl)` 自禁用。
-- [ ] 服务行带 isolate realm：`native-persistent-shell`（terminals）、`bootstrap-filesystem`（fs）。
-- [ ] import 链测试通过：
-  ```bash
-  node -e "import('./router-core.mjs').then(m => console.log(typeof m.classifyTask, typeof m.sessionEvents, typeof m.overlayFor))"
-  node -e "import('./router-progressive.mjs').then(m => console.log(m.name))"
-  node -e "import('./instruction-hint.mjs').then(m => console.log(m.name))"
-  node -e "import('./env-probe.mjs').then(m => console.log(typeof m.probeStatic))"
-  ```
-- [ ] 真实运行 WSL bash 冒烟测试成功：
-  ```bash
-  wsl.exe -d <distro> --cd /home/<user> -e bash -lc 'echo ok; uname -srm'
-  ```
-- [ ] 重启后新建会话，第一轮即应看到**全量工具**（无锚定对、无阶段限制）+ 英文**系统环境报告**（OS/内核/架构、CPU/内存、用户、cwd 世界、shell、路径规则）。
-
----
-
-## 4. 项目构成
-
-```
-big-fat-whale-maid-adaptive/
-├── package.json            # bundle 声明：dsh.bundle.patch → ./cordis.patch.yml
-├── cordis.patch.yml        # 【现行·权威】preset 声明（id/name/description/order/plugins）+ 全部插件行
-├── agent.cordis.yml        # 【旧格式·备查】0.1.5/0.1.6 的 Agent-plane 组合（已被取代）
-├── preset.yml              # 【旧格式·备查】展示元数据：name / description / order
-├── router-core.mjs         # 思维模式路由核心（纯函数库，无 apply，不作为插件装载）
-├── router-progressive.mjs  # 任务模式路由 + delivery_check + dev_router_status（无工具门控）
-├── compaction-epoch.mjs    # epoch 感知晋升追踪（instruction-hint 使用）
-├── skill-search.mjs        # 技能搜索（anchored-standard 移植）
-├── instruction-hint.mjs    # 指令文件短提示（anchored-standard 移植）
-├── env-probe.mjs           # 环境探测 + 简报 + env_probe/gitbash/pwsh 工具（原创核心）
-├── wsl-bash.mjs            # 自包含「bash 直达 WSL」工具（原创）
-├── context-gate.mjs        # [已卸载·备查] 旧首轮注入门控
-├── tool-bootstrap.mjs      # [已卸载·备查] 旧首轮锚定
-├── dev-tool-search.mjs     # [已卸载·备查] 旧按需解锁
-├── README.md               # 插件作用说明（给人看）
-├── AI.md                   # 面向 AI 的项目构成与安装说明
-├── AIreadme.md             # 本文件：安装方法说明（给 AI / 维护者看）
-└── CREDITS.md              # 改编来源与致谢（上游插件）
+```text
+<DeepSeek Harness 安装目录>\resources\runtime\cli\bin\dsh.cmd plugin --profile desktop add "file:D:/path/to/package.tgz"
 ```
 
-### 4.1 `cordis.patch.yml` 中的插件行（按注册顺序）
+不要用普通 CLI boot 保留的 `desktop` 档，不要直接复制 `node_modules`（其中可能记录其他 profile 的绝对 store 路径）。
 
-| id | 类型 | 作用 |
-|---|---|---|
-| `router-progressive` | `dsh-preset-big-fat-whale-maid-adaptive/router-progressive.mjs` | 任务模式路由：注入 react/spec/weak 叠加句到 persona；注册 `dev_router_status` / `delivery_check`；**不做任何工具门控** |
-| `env-probe` | `dsh-preset-big-fat-whale-maid-adaptive/env-probe.mjs` | 挂载时探测静态环境；每会话首轮注入英文**系统环境报告**（OS/内核/架构、CPU/内存、用户与 home/tmp、cwd 世界、shell 与路径规则；覆盖 Windows / Linux / WSL / macOS / Android）；注册 `env_probe` / `gitbash`（全环境第一优先）/ `pwsh` 工具 |
-| `persona` | `@deepseek-ai/dsh-persona` | 女仆长人设 + 外貌设定 + 任务模式路由说明；`complete: true`、`includeRuntimeContext: false` |
-| `instruction-hint` | `dsh-preset-big-fat-whale-maid-adaptive/instruction-hint.mjs` | 首次工具调用/回复后注入一次指令文件短提示（非命令式措辞，randomUUID 唯一 id，全链探测 AGENTS.md/CLAUDE.md） |
-| `native-persistent-shell` | cordis:group，isolate `terminals` | 非 win32 提供 Minimal 同款持久 PTY bash（工具名 `bash`）；`disabled: win32` |
-| `wsl-bash` | `dsh-preset-big-fat-whale-maid-adaptive/wsl-bash.mjs` | 仅 win32 启用；`disabled: !!js process.platform !== 'win32' \|\| /[\\/]wsl-/.test(baseUrl)`（`wsl-` 自禁用让位给自动变体的 bash） |
-| `str-replace-editor` | 官方行（host fs） | 仅 win32 启用 + `wsl-` 自禁用；win32 上用宿主文件系统（Windows 路径与 `\\wsl.localhost\<distro>\…` 均可） |
-| `bootstrap-filesystem` | cordis:group，isolate `fs` | 非 win32 提供 Minimal 同款 fs-local + str_replace_editor；`disabled: win32` |
-| `tool-fs` | 官方行 | 全平台注册，走宿主文件系统（win32 上 WSL 文件经 UNC 访问） |
-| `tool-fs-search` | 官方行 | 仅非 win32；win32 上故意不注册（Windows ripgrep 读不了 WSL 路径），WSL 侧用 bash find/grep |
-| `tool-jobs` / `skill-filesystem` / `skill-search` / `tool-goal` | 官方行 + 移植行 | 宿主平面服务的模型面消费行，不放 realm |
-| `planning` | cordis:group，isolate `planMode` | 计划模式 |
-| `compaction` | cordis:group，isolate `compaction`+`toolResultPruner` | 压缩 + 工具结果裁剪 |
-| `delegation` | cordis:group，isolate `workflowEngine` | subagent / subagent_fork / codex / claude-code（已启用）/ workflow / ralph |
-| `tool-ask-user` / `tool-todo` / `tool-web` | 官方行 | 提问、待办、Web 搜索 |
+包管理失败时先读日志定位供应链/兼容/依赖问题，不要直接修改引擎或清空整个 profile。源码升级需要重新安装，已有进程不保证热更新。未经允许不要为安装强行重启当前会话。
 
-### 4.2 关键设计约束（改造时不得破坏）
+## 3. PowerShell 配置
 
-1. **全量工具开放**：组合中不得重新引入任何工具过滤插件（`context-gate` / `tool-bootstrap` / `dev-tool-search` 已卸载）；`router-progressive` 不得过滤 `assembled.tools`。
-2. **平台分派互斥**：两组 bash/editor 提供者绝不可同时启用，否则报 `tool "bash" is already registered in this scope`。
-3. **`wsl-` 变体自禁用**：`wsl-bash` 与顶层 `str-replace-editor` 的 disabled 表达式必须包含 `/[\\/]wsl-/.test(baseUrl)`——当本目录被复制成 `wsl-*` 变体时（dsh-wsl-workspace 的生成器会为每个源预设生成变体并把 bash/editor 替换为它自己的 WSL 实现），这两行必须自动让位，否则变体双注册冲突。
-4. **服务行必须带 isolate realm**：`native-persistent-shell`（terminals）、`bootstrap-filesystem`（fs）；纯消费官方行不放 realm。
-5. **本地 mjs 零外部依赖**：用户 home 下的 preset 无法解析 harness 的 `@deepseek-ai/*` 包，全部 `.mjs` 只允许 `node:` 内置模块 import。
-6. **无任何机器相关路径**：本预设没有绝对路径行；安装到任何机器都无需改配置。
-7. **`router-core.mjs` 是纯函数库**（无 `apply`），不作为插件装载，仅供 `router-progressive.mjs` 相对路径 import。
+默认无需配置：先验证 PowerShell 7+，没有可用 7 时使用系统默认 PowerShell，均绑定实际绝对路径并显示版本。仅在初次探测时选择 fallback，命令执行失败不触发降级重试。
 
-### 4.3 模块接口速查
+可选的显式固定路径配置位于本预设的 `env-probe` 插件行：
 
-- **`router-core.mjs`**：导出 `classifyTask(text)`（1=react / 0=spec / 'weak'）、`overlayFor(mode, modelId)`（任务模式叠加句，Flash 模型 weak 带三锚）、`sessionEvents(session)`（snapshotEvents 兼容）、`sessionMode(session)`、`parseMode(token)`、`bandOf/bandFor/isFlashModel/isComplexTask/clamp01/applyPersona`。
-- **`router-progressive.mjs`**：`name = 'whale-maid-router'`，`inject = ['systemPrompt', 'tools']`。注入任务模式叠加句；注册 `dev_router_status` / `delivery_check`；**无 STAGES、无 restrictTools、无 phase_advance**（全量开放）。
-- **`compaction-epoch.mjs`**：`createEpochPromotion(promoteEvents, options)`——epoch 感知晋升追踪，供 `instruction-hint.mjs` 使用。
-- **`env-probe.mjs`**：导出 `probeStatic(timeoutMs)`（async）、`worldOf(cwd)`、`buildBrief(snapshot, cwd, wslVariant)`。注册 `env_probe` / `gitbash`（win32，全环境第一优先）/ `pwsh`（win32 回退；非 win32 探测到才注册）。英文系统环境报告（含 OS / 硬件 / 用户 / cwd / shell）。
-- **`wsl-bash.mjs`**：导出 `planFor(workdir, fallbackDistro, username)` 三态翻译；执行形状 `wsl.exe -d <distro> [--cd <linuxCwd>] -e bash -lc <command>`。
+```yaml
+config:
+  probeTimeoutMs: 10000
+  pwshPath: 'C:\Program Files\PowerShell\7\pwsh.exe'
+```
 
----
+这是**当前机器专用配置**，默认发行包不写死该路径。显式固定路径要求 Core 7+；无效时报告不可用，不绕过固定选择。改配置后重载/重启对应宿主。
 
-## 5. 常见故障诊断
+## 4. 安装验证
 
-| 症状 | 根因 | 修复 |
-|---|---|---|
-| `Invalid schema ... got 'type: null'` | 工具 `parameters` 是空对象 `{}` | 用 `toJsonSchema({})` 或显式 object-rooted JSON Schema |
-| `tool "bash" is already registered in this scope` | 同层两个 bash 提供者 | 检查平台 disabled 互斥与 `/[\\/]wsl-/.test(baseUrl)` 自禁用 |
-| 挂载报 `never started`（某行） | 该行模块 import 失败——**Loader 对导入失败只记日志不抛错**，审计遂报 "never started" | 先确认该行是包内子路径且 `package.json` 的 `exports` 放行了它；相对路径 `./x.mjs` 在此处**必然失败**（解析基准是 profile 目录，不是 bundle 目录） |
-| **每轮**对话都失败：`format v4 message requires a producer-owned source kind` | 注入的消息仍写 v3 的裸来源 `{ kind: 'plugin', plugin: <id> }`，而 DSH 0.1.7 的会话格式 v4 已退役该写法 | 改用插件自身的 producer kind `{ kind: 'plugin:<id>' }`（v2.1.2 已修；新增注入模块时沿用同一形式） |
-| Windows 上 bash 调用失败 `terminal inspection is unsupported` | 模型拿到的是 PTY 持久 bash（native-persistent-shell 未被 win32 禁用） | 复核 disabled 表达式 |
-| bash 报 `workdir is not in any known world` | workdir 不是 UNC / Linux / 盘符三者之一 | 传入合法路径或让模型传绝对路径 |
-| pwsh 在 WSL 工作区里 spawn 失败 | 旧版把 Linux/UNC workdir 直接当 Windows 进程 cwd | 已修复（v3）：非盘符路径兜底 `%SystemRoot%`；命令内可用 `Set-Location` 切换目录 |
-| 工具不全 | 组合中重新引入了过滤插件，或工具行被平台 disabled | 本预设不做门控：检查 `cordis.patch.yml` 行与 disabled 表达式 |
-| 简报缺失 | pre-step 注入异常被静默跳过 | 查 host 日志 env-probe 警告；`env_probe` 工具可手动复查 |
+1. 版本为 2.2.0；`dsh.profile.bundles` 中预设仅登记一次；原有插件不减少。
+2. `package.json` 的 `exports` 指向的文件齐全，三个新 helper 被安装：`environment-context.mjs`、`powershell-runtime.mjs`、`shell-workdir.mjs`。
+3. 组合 schema 校验通过；`persona.complete:false`，`includeRuntimeContext:false`；平台互斥与 `wsl-` 自禁用仍保留。
+4. 在真实 prompt registry 中看到 `[ENV]` 与 `[MODEL]`；切换模型后下一请求使用新路由 ID，不采用旧 `agent.options`。
+5. 直接通过所注册 `pwsh` 工具验证：实际 `$PSVersionTable.PSVersion`、进程路径、中文输出与 cwd。简报版本应与工具一致。
+6. 非法工作目录在 spawn 之前拒绝；不存在的目录导致 spawn/cd 报错，不能输出后续命令的成功标志。
+7. 当前会话未重启时明确说明“磁盘已更新，运行中实例需重启生效”，不要冒称已经热更新。
 
----
+## 5. 回归测试
 
-## 6. 定制入口
+```bash
+npm test
+DSH_TEST_ANCHOR=/path/to/installed/dsh npm test
+PWSH_RUNTIME_REAL_PATH='C:\Program Files\PowerShell\7\pwsh.exe' npm test
+```
 
-- 改人设：`persona` 行 `prefix`（保持 `complete: true`）。
-- 改路由：`router-core.mjs` 的 REACT_RE / SPEC_RE 关键词与叠加句。
-- 改交付 gate：`router-progressive.mjs` 的 `delivery_check` 描述与校验逻辑。
-- 改 WSL bash 行为：`wsl-bash` 行的 `config`（`distro`、`username`、`timeoutMs`、`maxOutputBytes`、`probeTimeoutMs`）。
-- 加/减能力：增删顶层行；新增服务行必须带 isolate realm，纯消费行保持松散。
-- 改显示名：`cordis.patch.yml` 里 preset 声明的 `config.name`（`preset.yml` 已退为旧格式备查）。
-- 派生新预设：复制整个目录，改 `package.json` 的 `name`、`cordis.patch.yml` 的声明行 id（`preset-<id>`）与 `config.id`（`[a-z0-9][a-z0-9-]*`），重新作为 bundle 装入并重启。
+常规 PowerShell 选择/默认回退测试完全 mock，不要求卸载本机 PowerShell 7 或真的运行 5.1。真实绑定检查仅执行指定的 PowerShell 7 路径。Git Bash 真实转义测试创建临时目录并自行清理，不运行攻击命令或 WSL。
+
+## 6. 故障定位
+
+| 症状 | 定位与处理 |
+|---|---|
+| 有人设但没有环境段 | 检查是否误改成 `complete:true`，以及实际装载的预设版本 |
+| 切模后 ID 仍旧 | 检查模板与官方 model-selection 耦合，勿读取 agent 初始选项 |
+| `pwsh` 版本错误 | 检查简报的绑定路径、版本、fallback 状态与可选 `pwshPath`；不要换成另一个 shell 调用 5.1 |
+| 环境探测失败 | 查看简报 warning；`env_probe` 可刷新缓存，失败不能阻断整个会话 |
+| 工作目录报错 | 传入当前后端支持的绝对路径，勿改成系统目录后继续任务 |
+| 预设 never started / 加载失败 | 检查包已安装、exports 完整、本地插件不是 profile 相对路径 |
+| 已安装但行为没变 | 确认实际使用的 profile；对应宿主可能仍在运行旧模块 |

@@ -79,7 +79,7 @@ const PLUGIN_ID = 'big-fat-whale-maid-adaptive'
  * `assertMessageEventShape` in `@deepseek-ai/dsh-session`); the plugin id rides
  * alongside it so a reader can attribute the message to this preset.
  */
-const HINT_SOURCE = { kind: 'plugin:' + PLUGIN_ID }
+const HINT_SOURCE = { kind: 'plugin:' + PLUGIN_ID + ':instruction-hint' }
 
 /**
  * Whether a durable message is THIS plugin's instruction hint. Accepts the
@@ -91,12 +91,13 @@ const HINT_SOURCE = { kind: 'plugin:' + PLUGIN_ID }
 const isOwnHint = (message) => {
   const source = message?.data?.source
   if (source === undefined || source === null) return false
-  if (source.kind === HINT_SOURCE.kind) return true
-  // Session format v4 retired the bare `kind: 'plugin'` + `plugin` pair; rows
-  // written before this plugin switched to its producer-owned kind still carry
-  // that shape, so recognize it as well (otherwise a host restart re-injects).
-  if (source.kind === 'plugin' && source.plugin === PLUGIN_ID) return true
-  return source.kind === 'instruction-hint'
+  if (source.kind === HINT_SOURCE.kind || source.kind === 'instruction-hint') return true
+  // Older environment briefs and instruction hints shared one producer kind.
+  // Require a hint-specific message id; an env-brief must never suppress AGENTS.
+  const id = message?.data?.id ?? message?.data?.message?.id
+  const legacyProducer = source.kind === 'plugin:' + PLUGIN_ID
+    || (source.kind === 'plugin' && source.plugin === PLUGIN_ID)
+  return legacyProducer && typeof id === 'string' && id.startsWith('instruction-hint-')
 }
 
 function parsePromoteOn(value) {

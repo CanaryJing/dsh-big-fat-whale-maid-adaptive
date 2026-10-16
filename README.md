@@ -1,129 +1,100 @@
-# DS女仆长模式
+# DS女仆长模式 · v2.2.0
 
-> **当前版本 v2.0 · 独立实现**：已移除并**不再采用**风神（dsh-routing-suite）与明神（dsh-anchored-standard）的上游方案（首轮锚定 / 注入门控 / 渐进披露 / 按需解锁）。
->
-> DSH（DeepSeek Harness）自定义 Agent Preset 插件：**全量工具一次性开放**——所有已注册工具从第一轮起全部可见（无首轮锚定、无四阶段渐进披露、无按需解锁）；自动探测宿主系统（Windows / Linux / WSL / macOS / Android）与工作目录所属世界，`gitbash` **全环境第一优先**（Windows 母系统、WSL 文件经 UNC、通用 shell 任务；`pwsh` 兜底）、`bash` 直达 WSL 发行版；任务感知思维模式路由（react / spec / weak）与 `delivery_check` 交付 gate；全程保持蓝发蓝瞳鲸鱼娘女仆长人设。
->
-> **单预设自包含 · 零外部插件依赖**：不依赖 `dsh-wsl-workspace`，整个文件夹本身就是一个可安装的 DSH bundle（`package.json` + `cordis.patch.yml` + 本地 `.mjs` 插件），装上即用。
+DSH 的个人工程预设：**全量工具首轮开放、可靠环境简报、实时请求模型 ID、安全工作目录、PowerShell 7 优先绑定**，保留温柔严谨的蓝发蓝瞳鲸鱼娘女仆长风格。
 
----
+整个目录是一个 DSH bundle；自定义模块只使用 Node 内置模块及包内导入，不依赖 `dsh-wsl-workspace`。组合本身仍依赖 DSH 官方插件与服务，不是脱离 DSH 的独立运行时。
 
-## 一、这个插件是做什么的？
+## v2.2.0 重点
 
-它是 DSH 的一个 **Agent Preset**（自定义智能体模式），在一个模式里解决了七件事：
+### 环境简报始终可见
 
-| # | 能力 | 说明 |
-|---|---|---|
-| 1 | 全量工具开放 | 所有已注册工具从第一轮起全部可见：无首轮锚定、无渐进披露、无按需解锁（2026-09 起按主人要求调整） |
-| 2 | 判断运行系统 | 自动识别宿主系统：**Windows / Linux（含 WSL 内外）/ macOS / Android**（未知平台回退 `uname`），并枚举 WSL 发行版与默认发行版 |
-| 3 | 判断工作目录世界 | 自动判定当前工作目录属于 **Windows 母系统**、**WSL 文件系统**（`\\wsl.localhost\…`）还是**原生 Linux**，并给出路径互转规则 |
-| 4 | gitbash 优先的 shell 路由 | 无论 Windows 母系统文件、WSL 文件（经 `\\wsl.localhost\…` UNC）还是通用 shell 任务，都**优先调用 `gitbash`**；`pwsh` 仅在 Git Bash 不可用或需要 PowerShell 专属能力时兜底；`bash` 工具**直达 WSL 发行版里的 bash**（预设自带的 wsl-bash 实现，通过 `wsl.exe` 调用），仅用于 Linux 侧专属工作或 gitbash 不可用时；macOS / Android 等原生宿主直接用各自 shell |
-| 5 | 思维模式路由 | 按任务分类自动叠加模式句：**react**（开发/创建 → 动手交付）、**spec**（修复/调试 → 先查后改）、**weak**（模糊任务 → 模型自路由，Flash 模型带回顾/收敛/反跑题三锚） |
-| 6 | 交付 gate | `delivery_check` 强制交付契约：文件存在/非空/UTF-8 + 证据清单（页面/图像必须含已复核的视觉证据），PASS 才允许宣告完成 |
-| 7 | 女仆长人设 | 蓝发蓝瞳鲸鱼娘女仆长（DeepSeek 娘）完整人设与外貌设定，中文思考，温柔可靠、专业严谨 |
+`[ENV]` 从首轮 user 消息改为 **每次请求装配的系统 section**：
 
-每会话首轮自动注入一条**英文系统环境报告**（省 token）：宿主系统（OS / 内核 / 架构）、硬件概要（CPU / 线程 / 内存）、用户与 home/tmp、工作目录所属世界、可用 shell 与路径互转规则——覆盖 **Windows / Linux（含 WSL）/ macOS / Android**，让模型一上来就摸清环境；随时可调用 `env_probe` 复查并实测各 shell，`dev_router_status` 查看当前路由状态。技能仍按需加载：`skill_search` / `skill_load` 替代 ~9KB 技能目录注入；`instruction-hint` 只提示指令文件存在，模型自己读文件。
+- 缓存宿主 OS、内核、架构、CPU、内存、用户、home/tmp、可用 shell 候选及路径规则；工作目录按当前会话生成。
+- 首次请求等待异步探测完成，不会先发送空环境；重启、恢复、上下文压缩后仍能重新装配，不会碰撞旧 `env-brief-*` 消息 ID。
+- `env_probe` 可重新采集缓存并显式冒烟测试，可能启动 WSL；常规请求不反复探测。
+- 明确区分“发现可执行文件”“已验证 PowerShell 版本”和“已实际执行冒烟测试”，未发现 WSL 不再声称 bash 可用。
+- 修复旧环境消息被误认成 AGENTS 指令提示的问题，旧会话日志仍可识别。
 
----
+### 当前模型 ID，而不是初始模型
 
-## 二、功能特性一览
+`[MODEL]` 使用 DSH 的 `{{model}}` / `{{provider}}`，在最终 prompt 渲染时读取**当前请求选定的 provider model ID**，跟随官方 UI 切换模型。不会读可能过时的 `agent.options.model`。
 
-- ✅ **零外部插件依赖**：全部 `.mjs` 只使用 `node:` 内置模块，用户预设目录下可直接运行。
-- ✅ **平台互斥自动分派**：win32 与非 win32 各只有一组 `bash`/`str_replace_editor` 提供者，绝无重复注册。
-- ✅ **gitbash 全环境优先**：`gitbash`（Git Bash）为第一优先 shell——Windows 母系统文件、WSL 文件（`//wsl.localhost/…` UNC）与通用 shell/脚本任务；`pwsh`（优先 PowerShell 7，兜底 5.1）与 `bash`（WSL）为回退。
-- ✅ **系统环境报告**：首轮简报报告真实系统环境（OS / 内核 / 架构、CPU / 内存、用户与 home/tmp、cwd 世界、shell 与路径规则），覆盖 Windows / Linux（含 WSL）/ macOS / Android，而非仅工具指引。
-- ✅ **`wsl-` 变体自禁用**：被 `dsh-wsl-workspace` 生成器复制为 `wsl-*` 变体时自动让位，避免工具冲突。
-- ✅ **无机器相关路径**：不含任何绝对路径，装到任何机器都无需改配置。
-- ✅ **安全降级**：WSL 缺失、shell 探测失败等场景一律 fail-open，不阻断预设运行。
+这是 DSH 请求路由 ID，**不是对反向代理背后实际模型身份的鉴定**。
 
----
+为了保留环境段，persona 使用 `complete: false`。旧的 `complete:true` 会让 DSH 丢弃其他系统段，并复原 waterfall 中对 persona 的追加；这一点已用真实 DSH prompt registry 测试。
 
-## 三、快速安装（DSH ≥ 0.1.6）
+### PowerShell 7 优先、没有 7 才回退默认
 
-> **⚠️ 安装方式已随 DSH 变更**：DSH 0.1.6 起 agent preset 改为**bundle 声明**，旧格式的
-> `$DSH_HOME/.agent-presets/<id>/` 目录**已不再被读取**（官方说明原话：*"Nothing reads that
-> directory any more."*）。本仓库因此自带 bundle 声明（`package.json` + `cordis.patch.yml`），
-> **整个文件夹就是一个可直接安装的 bundle**，仍然自包含。本地插件模块以**包内子路径**引用
-> （`dsh-preset-big-fat-whale-maid-adaptive/<file>.mjs`，由 `package.json` 的 `exports` 放行），
-> 而不是相对路径——预设声明内部的解析基准是 **profile 目录**，相对路径会全部解析失败。
+- `gitbash` 仍是全局第一优先。PowerShell 专属操作、`.ps1` 和 Windows UI 自动化使用 `pwsh` 工具。
+- 枚举常见安装位置和 PATH，实际校验版本、edition、进程可执行文件路径，**将工具 argv 固定到验证后的绝对路径**，不只依赖提示词或 PATH。
+- 优先稳定 PowerShell 7+，同类选择较高版本，再考虑 preview。
+- **没有有效的 7 时回退系统默认 PowerShell**（Windows 包括 5.1），简报和工具描述明确显示实际版本、路径及 fallback 状态。
+- 绑定后命令执行失败直接报错，不再偷偷换另一个 PowerShell 重试。
+- 可选配置 `env-probe.config.pwshPath` 固定一个 PowerShell 7+ 路径。显式固定路径无效时报告不可用，不绕过配置选择其他后端；跨机器通常无需配置此项。
 
-1. **前置条件**：已安装 DSH CLI 与 `dsh web`（0.1.6 及以上）。Windows 宿主想用「bash 直达 WSL」功能时，需先安装任意 WSL 发行版（如 `wsl --install -d kali-linux`）。
-2. **把本文件夹作为 bundle 加进 profile**（`dsh plugin` 转发给 pnpm，并在成功后自动把本包追加进 `dsh.profile.bundles`）：
-   ```powershell
-   dsh plugin --profile web add "file:<本文件夹的绝对路径>"
-   ```
-   若 pnpm 被 `minimumReleaseAge` 一类供应链策略拦下（报 `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`，与预设本身无关），可改为手工登记：把本文件夹联进 `profiles/web/node_modules/`，再把包名 `dsh-preset-big-fat-whale-maid-adaptive` 追加进 `profiles/web/package.json` 的 `dsh.profile.bundles`。
-3. **重启 `dsh web`**（或依赖 HMR 热加载），在**新建会话**的模式选择器中选择「DS女仆长模式」。
+### 工作目录失败关闭
 
-> **升级**：`git pull` 之后需**重新执行一次第 2 步**——bundle 是安装时的快照，不会跟随工作区改动。
-> **离线校验**（可选，工作区配套脚本）：`node 脚本/verify-dsh-preset-bundle.mjs <本文件夹>`，会逐行对照已装 DSH 的真实 schema 校验每个插件行的 config。
->
-> 详细安装方法、验证清单与故障诊断见 **[AIreadme.md](./AIreadme.md)**。
+- Git Bash 的目录作为完整 POSIX 单引号参数传给 `cd --`；`$()`、反引号、单双引号、空格和中文保持字面含义。
+- `cd` 失败立即退出，不执行后续命令。
+- 显式空值、相对路径、NUL、未知世界报错，不再静默回退到系统目录。
+- Git Bash 支持 Windows 绝对盘符、WSL/SMB UNC、MSYS 路径；其他 Linux 绝对路径需要默认 WSL 发行版。
+- Windows PowerShell 接受 Windows 绝对盘符/UNC；原生 Linux/macOS PowerShell 接受原生绝对目录。
 
----
+## 安装 / 升级
 
-## 四、项目文件
+本版在 **DSH 0.2.0-rc.2** 实测。使用当前支持 bundle、prompt variable 与 section API 的 DSH；不再支持旧 `.agent-presets` 目录安装方式。
 
-```
-big-fat-whale-maid-adaptive/
-├── package.json            # bundle 声明：dsh.bundle.patch → ./cordis.patch.yml（整个文件夹即可安装）
-├── cordis.patch.yml        # 【现行·权威】agent preset 声明 + 全部插件行（本地模块按包内子路径引用）
-├── agent.cordis.yml        # 【旧格式·备查】0.1.5/0.1.6 的 Agent 组合定义（已被 cordis.patch.yml 取代）
-├── preset.yml              # 【旧格式·备查】旧模式元数据（name/description/order 已并入 cordis.patch.yml）
-├── router-core.mjs         # 思维模式路由核心（纯函数库，无 apply，不作为插件装载）
-├── router-progressive.mjs  # 任务模式路由 + delivery_check + dev_router_status（不再做渐进披露）
-├── compaction-epoch.mjs    # epoch 感知晋升追踪（instruction-hint 使用）
-├── skill-search.mjs        # 技能搜索（skill_search / skill_load）
-├── instruction-hint.mjs    # 指令文件短提示（替代完整 AGENTS.md digest）
-├── env-probe.mjs           # 环境探测 + 英文简报注入 + env_probe/gitbash/pwsh 工具
-├── wsl-bash.mjs            # 自包含的「bash 直达 WSL」工具（wsl.exe）
-├── context-gate.mjs        # [已卸载·备查] 旧首轮注入门控（不再参与组合）
-├── tool-bootstrap.mjs      # [已卸载·备查] 旧首轮锚定（不再参与组合）
-├── dev-tool-search.mjs     # [已卸载·备查] 旧按需解锁（不再参与组合）
-├── README.md               # 本文件：插件作用说明（给人看）
-├── AI.md                   # 面向 AI 的项目构成与安装说明
-├── AIreadme.md             # 安装方法说明（给 AI / 维护者看）
-└── CREDITS.md              # 改编来源与致谢（上游插件）
+```bash
+# 从源码目录安装；请替换路径和实际 profile
+ dsh plugin --profile web add "file:/absolute/path/to/big-fat-whale-maid-adaptive"
+
+# 或安装 GitHub Release 下载的 tgz
+ dsh plugin --profile web add "file:/absolute/path/to/dsh-preset-big-fat-whale-maid-adaptive-2.2.0.tgz"
 ```
 
----
+- 使用实际宿主对应的官方插件管理 CLI。Electron 的 `desktop` 档须用桌面版自带 CLI 管理。
+- 安装完成后重启对应宿主，并选择「DS女仆长模式」。安装文件成功不代表正在运行的旧实例已经热更新。
+- `git pull` 后须重新安装；本地 `file:` 依赖通常是安装快照，不保证自动跟随源码。
+- 不要直接复制整个 profile 或 `node_modules`；遇供应链/兼容限制应检查原因，不要默默关闭保护。
 
-## 五、常见问题
+维护和安装细节见 [AI.md](./AI.md)、[AIreadme.md](./AIreadme.md)。
 
-| 问题 | 原因与处理 |
-|---|---|
-| Windows 上 bash 工具不存在 | 没装 WSL 发行版或 `wsl.exe -l -q` 列不出任何发行版。安装 WSL 后重启 dsh web；预设会安全降级 |
-| bash 报「workdir is not in any known world」 | 传入的 workdir 不是 WSL UNC / Linux 路径 / Windows 盘符三者之一 |
-| resume 报「tool "bash" is already registered」 | 与其它预设的 wsl-* 自动变体冲突（dsh-wsl-workspace 生成器上游坑）。本预设通过「变体目录自禁用」规避；如遇旧会话，重启 dsh web 后新建会话即可 |
-| 工具不全 | 本预设不做任何工具门控：所有已注册工具从第一轮起全部可见。若仍缺工具，检查该工具是否在组合中注册（agent.cordis.yml）或其平台 `disabled` 条件 |
-| 支持哪些系统 | 系统环境报告覆盖 Windows / Linux（含 WSL）/ macOS / Android，未知平台回退 `uname`；shell 与文件工具按平台自动分派 |
-| delivery_check 报 FAIL | 交付契约未满足：检查文件存在/非空/UTF-8 与证据清单（页面/图像类必须 `reviewed: true`），修复后重跑 |
-| 想自定义 | 复制整个文件夹为新 id，编辑 `agent.cordis.yml`（改人设/加删工具行）与 `preset.yml`（显示名），详见 `AIreadme.md` |
+## 验证
 
----
+```bash
+npm test
+# 可选，接入已安装 DSH 的真实 prompt/model-selection 服务
+DSH_TEST_ANCHOR=/path/to/dsh npm test
+# 可选，只验证这一份本机 PowerShell 7，不执行 WSL 或 5.1
+PWSH_RUNTIME_REAL_PATH='C:\Program Files\PowerShell\7\pwsh.exe' npm test
+```
 
-## 六、来源说明与致谢
+测试覆盖首轮异步探测、每轮/重启/压缩环境上下文、切模、字面大括号路径、旧指令提示识别、shell 转义与失败阻断、PowerShell 7 选择及默认后端回退。普通测试对 PowerShell 探测使用 mock；真实 DSH/PowerShell 检查按需启用。Git Bash 可用时另做真实目录攻击字符串验证。
 
-**自 v2.0 起，本预设不再采用风神（dsh-routing-suite）与明神（dsh-anchored-standard）的上游方案**——首轮锚定、统一注入门控、四阶段渐进披露、按需工具解锁均已移除，预设转为独立实现与维护。
+## 能力与边界
 
-仍沿用其少量通用工具模块（归属与致谢保留）：
+- 所有**已注册且可用**工具从第一轮开放，不代表所有提供者均已安装、认证；技能按需 `skill_search` / `skill_load`。
+- 保留原有任务分类、子代理、workflow、goal、计划模式、交付检查工具。本次没有重写任务分类器或 `delivery_check` 校验器。
+- `delivery_check` 是检查辅助与模型遵守的交付约定，不是不可绕过的安全门禁。
+- shell 路由建议不是 OS 沙箱；真实权限、审批、网络边界由宿主、当前账户和 DSH 底座决定。
+- 旧 `agent.cordis.yml`、`preset.yml` 和 bootstrap/gate 源码仅备查，不参与现行组合。改人设、展示名和工具行请编辑 `cordis.patch.yml`。
 
-| 上游项目 | 作者 | 仍沿用的模块 |
-|---|---|---|
-| [dsh-routing-suite](https://github.com/yjh051108/dsh-routing-suite) | **风神**（yjh051108） | `router-core.mjs` 思维模式路由（react/spec/weak 分类 + 模型感知叠加句）、`delivery_check` 交付 gate |
-| [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard) | **明神**（xiaobright） | `skill-search.mjs`（skill_search / skill_load）、`instruction-hint.mjs`（指令文件短提示）、`compaction-epoch.mjs`（epoch 感知追踪） |
+## 来源与致谢
 
-> 已移除的上游方案源码保留在仓库备查（`context-gate.mjs` / `tool-bootstrap.mjs` / `dev-tool-search.mjs`），不再装载；历史版本见 git。
+v2 起已移除首轮锚定、注入门控、四阶段披露和按需解锁。仍沿用部分通用模块：
 
-详细来源说明见 [CREDITS.md](./CREDITS.md)。
+- [风神 / dsh-routing-suite](https://github.com/yjh051108/dsh-routing-suite)：任务分类、模式提示、交付检查。
+- [明神 / dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard)：技能按需加载、指令文件提示、epoch 追踪。
 
----
+完整归属见 [CREDITS.md](./CREDITS.md)。
 
-## 七、版本历史
+## 版本历史
 
-- **v2.1.2**（2026-09）：**修 DSH 0.1.7 会话格式 v4 的致命不兼容——消息来源改用 producer-owned kind**。0.1.7-rc.2 起 `@deepseek-ai/dsh-session-format-v3-to-v4` 的校验器 `source()` 对 `{ kind: 'plugin', plugin: <id> }` 这种 v3 写法直接抛 `format v4 message requires a producer-owned source kind`（v4 已退役裸 `plugin` 这个 kind，插件必须盖自己的 `plugin:<id>`）。本预设有两处仍在写旧写法：① `env-probe.mjs` 的「首轮环境简报」——它注册在 `agent/pre-step`，**每轮开始都会注入**，所以症状是**每一轮对话都运行失败**；② `instruction-hint.mjs` 的指令提示（同样挂在 `agent/pre-step`）。现两处均改为自己的 producer kind `plugin:big-fat-whale-maid-adaptive`——这正是 DSH 自带的 v3→v4 迁移函数对未登记插件推导出的形式，所以新旧两代日志读回来是同一个形状。`instruction-hint.mjs` 的「每会话仅一次」耐久判据同步改为同时识别新旧两种 kind（含迁移前的裸 `plugin` + id 形态），否则宿主重启后会重复注入一次提示。
-- **v2.1.1**（2026-09）：**修 v2.1.0 的致命装载缺陷——改用包内子路径引用本地插件**。v2.1.0 把预设内部的插件行写成相对路径（`./env-probe.mjs?v=2`），以为它锚定在 patch 文件旁；实测（探针取证）**预设声明内部的行拿到的解析基准是 profile 目录，不是 bundle 目录**，于是 5 个本地插件全部 import 失败，而 `cordis-plugin-loader` 的 `_init()` 对导入失败**只记日志、不抛错**（`entry.fiber` 保持 undefined），挂载审计遂把每一行报成 `never started`，整个预设显示为**加载失败**。现改为 `dsh-preset-big-fat-whale-maid-adaptive/<file>.mjs` 包内子路径（由 `package.json` 的 `exports` 放行），该写法以 profile 目录为基准解析，正是 bundle 的安装位置；同时去掉 `?v=N` 缓存查询串（查询串会破坏 `exports` 子路径匹配）。已在 Windows 与 Android 两端用「模块自报家门」探针实证：修复后挂载内各行的 `apply` 全部执行。
-- **v2.1.0**（2026-09）：**迁移到 DSH bundle 声明格式**（⚠️ **此版装载失败，请用 v2.1.1**，原因见上）。DSH 0.1.6/0.1.7 起 agent preset 由 bundle patch 里的 `@deepseek-ai/dsh-agent-preset` 声明行定义，旧的 `$DSH_HOME/.agent-presets/<id>/` 目录不再被读取——本仓库新增 `package.json`（`dsh.bundle.patch`）与 `cordis.patch.yml`（preset 声明 + 插件行），文件夹本身成为可安装 bundle；`preset.yml` / `agent.cordis.yml` 退为旧格式备查。同时按 0.1.7 的实际 schema 对齐插件行：workflow 引擎行由已移除的 `@deepseek-ai/dsh-workflow-worker-thread` 换为 `@deepseek-ai/dsh-workflow-ptc`（`provider: spawn`），补上 0.1.6+ 新增的 `present`（`@deepseek-ai/dsh-tool-present`）与 `command-goal`；修复 `instruction-hint` 的「每会话仅一次」持久化判据与它自己写入的消息来源（`kind: plugin` + 插件 id）不一致、导致宿主重启后重复注入一次提示的问题。
-- **v2.0.1**（2026-09）：修复 `env_probe` 工具回归——v2.0.0 把 `shellRoutes` 更名为 `shellSummary` 时，漏改了 `env_probe` 工具内唯一的调用点（该行本身即为从未被使用的死代码，故长期未被发现），导致「重新探测环境」必抛 `ReferenceError: shellRoutes is not defined`，环境报告无法手动刷新；现已删除该死代码行，`env_probe` 恢复可用。
-- **v2.0.0**（2026-09）：全量工具一次性开放（移除首轮锚定 / 注入门控 / 四阶段渐进披露 / 按需解锁）；系统环境报告覆盖 Windows / Linux / WSL / macOS / Android；`gitbash` 全环境第一优先（含 WSL UNC 工作目录）；更名「DS女仆长模式」；不再采用风神 / 明神的上游方案。
-- **v1.x**：首轮 Linux 极简双工具锚定 + 四阶段渐进披露 + 环境 / 世界路由（改编自风神 / 明神上游）。
+- **v2.2.0**：可靠系统环境段、实时模型路由 ID、PowerShell 版本验证绑定与默认回退、安全工作目录、精简人设、自包含回归测试。详见 [发行说明](./releases/v2.2.0.md)。
+- **v2.1.2**：修复 DSH v4 会话格式不接受裸 `kind: plugin` 的消息来源问题。
+- **v2.1.1**：预设内部模块改用包内子路径，修复相对路径导致的装载失败。
+- **v2.1.0**：迁移 bundle 格式；存在装载缺陷，应升级后续版本。
+- **v2.0.1**：修复 `env_probe` 引用已更名函数的回归。
+- **v2.0.0**：全量工具开放，独立环境探测和 Git Bash 优先。
+- **v1.x**：历史锚定与渐进披露实现，保留在 Git 历史中。

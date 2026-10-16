@@ -1,38 +1,18 @@
 /**
- * env-probe — DS女仆长模式的环境探测、系统环境报告与多世界 shell 路由。
- *
- * 职责：
- *   1. 探测静态环境（宿主平台、是否 WSL 内、WSL 发行版、pwsh/wine 可用性）；
- *   2. 每个会话第一次请求前注入一份「环境简报」，告诉模型 bash/pwsh/文件工具
- *      各自运行在哪个世界，以及两个世界之间的路径互转规则；
- *   3. 注册 env_probe 工具：随时复查环境，并实际冒烟测试两侧 shell；
- *   4. 按探测结果注册 pwsh 工具：win32 上为 Windows 母系统 PowerShell（优先
- *      pwsh.exe，兜底 powershell.exe）；非 Windows 宿主上为原生 Linux 的 pwsh
- *      或 WSL 内的 powershell.exe interop，让模型始终能触达 Windows 母系统。
- *
- * v3（2026-02 审查修复）：
- *   - P1：pwsh 工具的 workdir 做 Windows 世界翻译——Linux/UNC 路径对
- *         Windows PowerShell 进程不可靠，兜底到 %SystemRoot%（与 wsl-bash
- *         同策略），绝不让 spawn 因 cwd 失败；
- *   - P2：探测与冒烟测试全部改为异步（node:child_process execFile +
- *         Promise.all），env_probe 工具调用不再同步阻塞事件循环；挂载探测
- *         也改为异步，启动不再等待；
- *   - P3：环境简报感知 `wsl-` 变体（ctx.baseUrl 含 /wsl-），变体下正确描述
- *         bash 为 dsh-wsl-workspace 持久 shell、文件工具为 WSL 文件系统世界；
- *   - P4：Windows PowerShell 探测扩展候选路径（Program Files 7 / 7-preview、
- *         每用户 Programs、WindowsApps 执行别名），仍以 5.1 兜底。
- *
- * 设计约束：
- *   - 零外部依赖：用户 home 下的 preset 无法解析 harness 的 node_modules，
- *     只允许 node: 内置模块；
- *   - 一切探测失败都必须降级为 "unknown"/skip，绝不抛错伤害会话；
- *   - 首轮简报不属于 bootstrap 的 suppressedContextSources
- *     （agent-instructions / skill-catalog），因此不会被锚定过滤器剥离。
+ * Environment awareness and host shell tools for the whale-maid preset.
+ * Cached host facts are contributed as a system section on EVERY request;
+ * DSH interpolates the final request model/provider only at prompt rendering.
+ * No durable user-message injection or once-per-process history IDs are used.
+ * Detection failure is reported as unknown; shell workdir errors fail closed.
+ * Only Node built-ins and bundled helpers are required.
  */
 
 import { execFile } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { promisify } from 'node:util'
+import { registerEnvironmentContext } from './environment-context.mjs'
+import { detectPowerShellRuntime, powerShellCommand } from './powershell-runtime.mjs'
+import { gitbashCommand, gitbashWorkdirPlan, pwshWorkdirPlan, resolveWorkdir } from './shell-workdir.mjs'
 import { arch, cpus, homedir, hostname, release, tmpdir, totalmem, userInfo, version as osVersion } from 'node:os'
 
 const execFileAsync = promisify(execFile)
@@ -41,7 +21,7 @@ const execFileAsync = promisify(execFile)
 export const name = 'whale-maid-env-probe'
 
 /** 工具注册需要 tools；pwsh-linux 工具执行与冒烟测试需要 subprocess。 */
-export const inject = ['tools', 'subprocess']
+export const inject = ['tools', 'subprocess', 'systemPrompt']
 
 const UNC_HOSTS = ['wsl.localhost', 'wsl$']
 const LXSS_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Lxss'
@@ -169,50 +149,6 @@ async function linuxWhich(cmd) {
 }
 
 /**
- * Windows 母系统 PowerShell 探测（win32 专用）：按「最新优先」顺序枚举常见
- * 安装位置——Program Files 的 PowerShell 7、7-preview、每用户 Programs、
- * WindowsApps 执行别名，最后兜底 Windows PowerShell 5.1。
- */
-function detectWindowsPowerShell() {
-  const systemRoot = process.env.SystemRoot
-  const programFiles = process.env.ProgramFiles
-  const localAppData = process.env.LOCALAPPDATA
-  const candidates = []
-  const push = (label, path) => {
-    if (typeof path === 'string' && path.length > 0) {
-      candidates.push({ label, path })
-    }
-  }
-  if (typeof programFiles === 'string' && programFiles.length > 0) {
-    push('PowerShell 7 (pwsh.exe)', `${programFiles}\\PowerShell\\7\\pwsh.exe`)
-    push('PowerShell 7 Preview (pwsh-preview.exe)', `${programFiles}\\PowerShell\\7-preview\\pwsh.exe`)
-  }
-  if (typeof localAppData === 'string' && localAppData.length > 0) {
-    push('PowerShell 7 (per-user)', `${localAppData}\\Programs\\PowerShell\\7\\pwsh.exe`)
-    push('PowerShell 7 Preview (per-user)', `${localAppData}\\Programs\\PowerShell\\7-preview\\pwsh.exe`)
-    // Microsoft Store 安装的执行别名（0 字节 reparse point，existsSync 可命中）。
-    push('PowerShell 7 (WindowsApps)', `${localAppData}\\Microsoft\\WindowsApps\\pwsh.exe`)
-    push('PowerShell 7 Preview (WindowsApps)', `${localAppData}\\Microsoft\\WindowsApps\\pwsh-preview.exe`)
-  }
-  if (typeof systemRoot === 'string' && systemRoot.length > 0) {
-    push('Windows PowerShell 5.1 (powershell.exe)', `${systemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`)
-  }
-  const seen = new Set()
-  for (const cand of candidates) {
-    if (seen.has(cand.path)) continue
-    seen.add(cand.path)
-    try {
-      if (existsSync(cand.path)) {
-        return { label: cand.label, argv: [cand.path, '-NoProfile', '-Command'] }
-      }
-    } catch {
-      // 路径含非法字符等极端情况：跳过该候选。
-    }
-  }
-  return undefined
-}
-
-/**
  * Windows 母系统 Git Bash 探测（win32 专用）：按常见安装位置枚举——
  * Program Files、Program Files (x86)、每用户 Programs。Git Bash 是 Windows
  * 侧默认 shell，探测失败时 Windows 侧回退到 pwsh。
@@ -268,7 +204,7 @@ function detectInsideWsl() {
  * 一次供简报使用。任何一项失败都降级，绝不抛错。
  * @returns {Promise<object>} snapshot
  */
-export async function probeStatic(timeoutMs) {
+export async function probeStatic(timeoutMs, options = {}) {
   const platform = process.platform
   const insideWsl = detectInsideWsl()
   const snapshot = {
@@ -300,67 +236,21 @@ export async function probeStatic(timeoutMs) {
     }
     // Windows 母系统 Git Bash：全环境第一优先 shell；探测失败则回退 pwsh。
     snapshot.gitbash = detectGitBash()
-    // Windows 母系统 PowerShell：按最新优先枚举，5.1 兜底。
-    snapshot.pwsh = detectWindowsPowerShell()
   } else {
-    // 原生 Linux / WSL 内：探测 pwsh 与 Windows interop。
-    const pwshPath = await linuxWhich('pwsh')
-    const interopPath = insideWsl ? await linuxWhich('powershell.exe') : undefined
-    if (pwshPath !== undefined) {
-      snapshot.pwsh = {
-        label: `PowerShell for Linux (${pwshPath})`,
-        argv: [pwshPath, '-NoProfile', '-Command'],
-      }
-    } else if (interopPath !== undefined) {
-      snapshot.pwsh = {
-        label: `Windows PowerShell (WSL interop, ${interopPath})`,
-        argv: [interopPath, '-NoProfile', '-Command'],
-      }
-    }
     const wine = await linuxWhich('wine')
     if (wine !== undefined) snapshot.wine = { path: wine }
   }
+  // Only discovery may choose the default backend when no PowerShell 7 exists.
+  // Once registered, execute the exact verified path; never retry via 5.1/PATH.
+  const powershell = await detectPowerShellRuntime({
+    platform, timeoutMs, pinnedPath: options.pwshPath,
+  })
+  snapshot.pwsh = powershell.runtime
+  snapshot.pwshWarning = powershell.warning
   return snapshot
 }
 
 // ── 简报生成 ───────────────────────────────────────────────────────────────
-
-/**
- * pwsh 是 Windows 母系统进程，进程 cwd 必须是 Windows 可寻址路径。
- * - 盘符路径（C:\…）直接用；
- * - WSL UNC / Linux 路径对 pwsh 不可靠（尤其 Windows PowerShell 5.1 与
- *   未启动的发行版），一律兜底到 %SystemRoot%（与 wsl-bash 同策略），
- *   绝不让 spawn 因 cwd 失败。
- * @param {string|undefined} workdir 模型传入的 workdir 或会话 cwd。
- * @returns {string|undefined} 可直接作为 Windows 进程 cwd 的路径。
- */
-function windowsCwdFor(workdir) {
-  if (typeof workdir === 'string' && workdir.length > 0) {
-    if (isWindowsDrivePath(workdir)) return workdir
-    return process.env.SystemRoot ?? process.cwd()
-  }
-  return undefined
-}
-
-/**
- * Git Bash workdir 计划：Windows 盘符路径 → 作为进程 cwd；
- * WSL UNC（\\wsl.localhost\<distro>\… / \\wsl$\…）→ cd 进 //wsl.localhost/…；
- * MSYS 风格 /c/… → 直接 cd；Linux 绝对路径 → 经默认发行版映射为 UNC cd。
- */
-function gitbashWorkdirPlan(workdir, defaultDistro) {
-  if (typeof workdir !== 'string' || workdir.length === 0) return {}
-  if (isWindowsDrivePath(workdir)) return { cwd: workdir }
-  const unc = /^[\\/]{2}(?:wsl\.localhost|wsl\$)[\\/]+([^\\/]+)([\\/][\s\S]*)?$/i.exec(workdir)
-  if (unc !== null) {
-    const rest = (unc[2] ?? '').replace(/\\/g, '/')
-    return { cd: `//wsl.localhost/${unc[1]}${rest}` }
-  }
-  if (/^\/[A-Za-z](?:\/|$)/.test(workdir)) return { cd: workdir }
-  if (workdir.startsWith('/') && typeof defaultDistro === 'string' && defaultDistro.length > 0) {
-    return { cd: `//wsl.localhost/${defaultDistro}${workdir}` }
-  }
-  return {}
-}
 
 /** 读取 Linux /etc/os-release 的 PRETTY_NAME；失败返回 undefined。 */
 function readOsRelease() {
@@ -451,7 +341,9 @@ function shellSummary(snapshot, world, wslVariant = false) {
     const distros = (snapshot.wsl.installed && snapshot.wsl.distros.length > 0)
       ? ` (distros ${snapshot.wsl.distros.map((d) => (d === snapshot.wsl.defaultDistro ? `${d}*` : d)).join(', ')})`
       : ''
-    const bash = wslVariant
+    const bash = !wslVariant && !snapshot.wsl?.installed
+      ? 'bash [unavailable: no WSL distribution detected]'
+      : wslVariant
       ? `bash -> WSL "${distro}" Linux bash (dsh-wsl-workspace; Linux-only work)`
       : `bash -> WSL "${distro}" Linux bash (native Linux paths; Linux-only work)`
     const parts = [
@@ -488,7 +380,7 @@ function pathRules(snapshot, world) {
   } else if (snapshot.insideWsl) {
     lines.push('Win->WSL: C:\\Users\\<user>\\x = /mnt/c/Users/<user>/x')
     lines.push('WSL->Win: /home/<user>/x = \\\\wsl.localhost\\<distro>\\home\\<user>\\x')
-    lines.push('bash on Windows files (Linux tools only): /mnt/<drive>/…; Windows commands via pwsh (interop)')
+    lines.push('bash on Windows files (Linux tools only): /mnt/<drive>/…; Windows executables require WSL interop; native pwsh remains Linux-side.')
   } else {
     lines.push('single world: no cross-system path conversion')
     if (snapshot.wine !== undefined) lines.push(`wine: ${snapshot.wine.path} (Windows apps on Linux, prefix ~/.wine)`)
@@ -497,7 +389,7 @@ function pathRules(snapshot, world) {
 }
 
 /**
- * 生成系统环境报告（每会话首轮注入）。报告宿主系统（OS / 内核 / 架构）、
+ * 生成缓存系统环境报告（每次请求装配）。报告宿主系统（OS / 内核 / 架构）、
  * 硬件概要（CPU / 线程 / 内存）、用户与 home/tmp、cwd 所属世界、可用 shell
  * 与路径互转规则；`wslVariant` 为 true 时按 `wsl-*` 变体的执行世界描述。
  */
@@ -535,10 +427,11 @@ export function buildBrief(snapshot, cwd, wslVariant = false) {
   lines.push(`files: ${fileSummary(snapshot, wslVariant)}`)
   lines.push('paths:')
   for (const rule of pathRules(snapshot, world)) lines.push(`  ${rule}`)
-  lines.push(snapshot.platform === 'win32'
-    ? 'smoke: bash: uname -srm; echo $0; pwd; ls /mnt/c >/dev/null 2>&1 && echo drvfs-ok'
-    : 'smoke: bash: uname -srm; echo $0; pwd')
-  lines.push('env_probe tool re-checks + smoke-tests shells anytime.')
+  if (snapshot.pwsh) lines.push(`pwsh binding: ${snapshot.pwsh.path} (version ${snapshot.pwsh.version}; ${snapshot.pwsh.isFallback ? 'system-default fallback; no PowerShell 7 available' : 'verified PowerShell 7+'})`)
+  if (snapshot.pwshWarning) lines.push(`pwsh notice: ${snapshot.pwshWarning}`)
+  lines.push('probe: PowerShell version/path verified when available; other shell candidates not execution-tested. env_probe refreshes facts and runs smoke tests (may start WSL).')
+  if (Number.isFinite(snapshot.probedAt)) lines.push(`snapshot: ${new Date(snapshot.probedAt).toISOString()} (cached host facts; cwd is request-local)` )
+  if (snapshot.probeError) lines.push(`probe warning: ${snapshot.probeError}`)
   return lines.join('\n')
 }
 
@@ -571,7 +464,7 @@ async function smokeBash(snapshot, timeoutMs) {
 async function smokePwsh(snapshot, timeoutMs) {
   if (snapshot.pwsh === undefined) return 'no PowerShell available, pwsh smoke test skipped'
   return smokeCapture(
-    [...snapshot.pwsh.argv, "'env_probe_pwsh_ok'; $PSVersionTable.PSVersion.ToString(); $env:OS"],
+    [...snapshot.pwsh.argv, powerShellCommand("'env_probe_pwsh_ok'; $PSVersionTable.PSVersion.ToString(); $env:OS")],
     timeoutMs,
   )
 }
@@ -619,7 +512,7 @@ export function apply(ctx, config) {
 
   // 挂载后异步探测一次：不阻塞启动；简报注入与 pwsh 注册都会等待它完成。
   let resolvedSnapshot = undefined
-  const probePromise = probeStatic(probeTimeoutMs)
+  const probePromise = probeStatic(probeTimeoutMs, source)
     .then((value) => {
       resolvedSnapshot = value
       return value
@@ -642,55 +535,34 @@ export function apply(ctx, config) {
   /** 重新探测（env_probe 工具每次调用时刷新；失败降级到最近一次快照）。 */
   const refresh = async () => {
     try {
-      return await probeStatic(probeTimeoutMs)
+      const fresh = await probeStatic(probeTimeoutMs, source)
+      const mounted = await probePromise
+      // Registered tools keep mount-time argv. Re-probing may discover a new
+      // installation, but must not falsely claim the existing tool uses it.
+      if (fresh.pwsh?.path !== mounted.pwsh?.path || fresh.pwsh?.version !== mounted.pwsh?.version) {
+        fresh.pwshWarning = [fresh.pwshWarning,
+          'Discovery changed; the registered pwsh binding remains unchanged. Reload the preset to rebind.',
+        ].filter(Boolean).join(' ')
+      }
+      fresh.pwsh = mounted.pwsh
+      resolvedSnapshot = fresh
+      return fresh
     } catch (error) {
       const base = resolvedSnapshot ?? (await probePromise)
-      return {
+      resolvedSnapshot = {
         ...base,
-        probedAt: Date.now(),
         probeError: error && error.message ? error.message : String(error),
       }
+      return resolvedSnapshot
     }
   }
 
-  // ── 1) 首轮环境简报：每个会话注入一次 ──────────────────────────────────
-  const briefed = new Set()
-  ctx.on('agent/pre-step', async ({ agent }, next) => {
-    const decision = await next()
-    try {
-      if (decision.kind === 'reject') return decision
-      const session = agent?.session
-      if (session === undefined || briefed.has(session.id)) return decision
-      const snap = resolvedSnapshot ?? (await probePromise)
-      briefed.add(session.id)
-      const cwd = session.header?.cwd ?? process.cwd()
-      const text = buildBrief(snap, cwd, isWslVariant)
-      return {
-        ...decision,
-        messages: [
-          ...(decision.messages ?? []),
-          {
-            id: `env-brief-${session.id}`,
-            role: 'user',
-            content: [{ type: 'text', text }],
-            // Producer-owned source kind. Session format v4 RETIRED the bare
-            // `{ kind: 'plugin', plugin: <id> }` pair (the v3→v4 validator
-            // raises "format v4 message requires a producer-owned source kind"
-            // for it), so a plugin is now identified by its own
-            // `plugin:<id>` kind — exactly what DSH's own v3→v4 migration
-            // derives for rows written by older versions, so both generations
-            // read back under one shape.
-            source: { kind: 'plugin:big-fat-whale-maid-adaptive' },
-          },
-        ],
-      }
-    } catch (error) {
-      // 简报失败绝不能伤害会话：静默跳过。
-      try {
-        ctx.logger?.warn(`env-probe: brief injection failed: ${String(error)}`)
-      } catch {}
-      return decision
-    }
+  registerEnvironmentContext(ctx, {
+    getSnapshot: () => resolvedSnapshot,
+    ready: probePromise,
+    describe: (snapshot, { agent }) => buildBrief(
+      snapshot, agent.session?.header?.cwd ?? process.cwd(), isWslVariant,
+    ),
   })
 
   // ── 2) env_probe 工具：复查环境 + 实测两侧 shell（全异步，不阻塞）──────
@@ -698,7 +570,7 @@ export function apply(ctx, config) {
     ctx.tools.register({
       name: 'env_probe',
       description:
-        'Re-probe and report the system environment (OS name/kernel/arch, CPU/memory, user/home/tmp, cwd world, available shells and path conversion rules), and smoke-test bash/gitbash/pwsh.',
+        'Refresh cached host facts (OS/kernel/arch, CPU/memory, user/home/tmp, cwd world, shell candidates and path rules), and smoke-test bash/gitbash/pwsh. The current model/provider routing IDs are supplied separately by the live system prompt. Smoke tests may start WSL.',
       parameters: toJsonSchema({}),
       output: textOutput,
       async execute(_args, exec) {
@@ -715,6 +587,7 @@ export function apply(ctx, config) {
           : 'wine: not found'
         const text = [
           buildBrief(fresh, cwd, isWslVariant),
+          'model/provider: see [MODEL] in the current system prompt (live request route; not inferred from stale session options).',
           'smoke tests:',
           `bash: ${bashTest}`,
           `gitbash: ${gitbashTest}`,
@@ -750,18 +623,18 @@ export function apply(ctx, config) {
           description:
             'Optional working directory. Windows drive paths (C:\\…) become the process cwd; ' +
             'WSL UNC paths (\\\\wsl.localhost\\<distro>\\…) and Linux absolute paths are entered with an automatic cd ' +
-            '(Git Bash reaches WSL files through //wsl.localhost/<distro>/…).',
+            '(Git Bash reaches WSL files through //wsl.localhost/<distro>/…). ' +
+            'Omitted uses the session cwd; empty, relative or unsupported paths are rejected. A failed cd stops the command.',
         },
       }),
       output: textOutput,
       async execute(args, exec) {
-        const workdir =
-          typeof args.workdir === 'string' && args.workdir.length > 0
-            ? args.workdir
-            : exec?.agent?.session?.header?.cwd
+        const workdir = resolveWorkdir(args.workdir, exec?.agent?.session?.header?.cwd)
         const plan = gitbashWorkdirPlan(workdir, snap.wsl?.defaultDistro)
-        const windowsCwd = plan.cwd ?? windowsCwdFor(workdir)
-        const command = plan.cd !== undefined ? `cd "${plan.cd}" || exit 1; ${args.command}` : args.command
+        // A launcher cwd is not the execution directory: cd -- <quoted target>
+        // must succeed before any caller command is allowed to run.
+        const windowsCwd = plan.cwd ?? process.cwd()
+        const command = gitbashCommand(args.command, plan.cd)
         const signal = exec?.signal
         const handle = ctx.subprocess.spawn({
           argv: [...gitbashArgv, command],
@@ -804,7 +677,7 @@ export function apply(ctx, config) {
     const snap = await probePromise
     if (snap.pwsh === undefined) return
     const pwshArgv = snap.pwsh.argv
-    const label = snap.pwsh.label
+    const label = `${snap.pwsh.label}; executable=${snap.pwsh.path}; version=${snap.pwsh.version}`
     const description = snap.platform === 'win32'
       ? `Run a PowerShell command on the Windows mother system. Backend: ${label}. ` +
         (snap.gitbash !== undefined
@@ -817,26 +690,27 @@ export function apply(ctx, config) {
         'or to drive PowerShell on native Linux. Commands run in a fresh process; non-zero exit codes are reported as errors.'
     ctx.tools.register({
       name: 'pwsh',
-      description,
+      description: description + ' This tool is bound to the verified absolute executable above. Prefer this tool for .ps1 scripts and Windows UI automation; do not launch powershell.exe or another unverified PowerShell through a different shell. PowerShell 7 is preferred; only when unavailable does discovery select the explicitly reported system-default backend. Command failures never trigger another fallback.',
       parameters: toJsonSchema({
         command: { type: 'string', required: true, description: 'The PowerShell command to execute.' },
         workdir: {
           type: 'string',
           description:
-            'Optional working directory; must be a Windows path (C:\\…). ' +
-            'WSL/Linux/UNC paths are not usable as the Windows PowerShell process cwd and fall back to %SystemRoot%.',
+            'Optional absolute working directory. Windows/interop PowerShell accepts drive paths and UNC; ' +
+            'native Linux/macOS PowerShell accepts native absolute paths. Omitted uses the session cwd; ' +
+            'empty, relative or cross-world paths are rejected, never redirected to a system directory.',
         },
       }),
       output: textOutput,
       async execute(args, exec) {
-        const workdir =
-          typeof args.workdir === 'string' && args.workdir.length > 0
-            ? args.workdir
-            : exec?.agent?.session?.header?.cwd
-        const windowsCwd = windowsCwdFor(workdir)
+        const workdir = resolveWorkdir(args.workdir, exec?.agent?.session?.header?.cwd)
+        const { cwd: windowsCwd } = pwshWorkdirPlan(workdir, {
+          platform: snap.platform,
+          windowsInterop: /\.exe$/i.test(pwshArgv[0]),
+        })
         const signal = exec?.signal
         const handle = ctx.subprocess.spawn({
-          argv: [...pwshArgv, args.command],
+          argv: [...pwshArgv, powerShellCommand(args.command)],
           ...(windowsCwd !== undefined ? { cwd: windowsCwd } : {}),
           stdio: {
             stdin: 'ignore',
