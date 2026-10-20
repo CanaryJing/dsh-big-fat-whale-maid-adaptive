@@ -45,13 +45,14 @@ config:
 
 ## 4. 安装验证
 
-1. 版本为 2.2.0；`dsh.profile.bundles` 中预设仅登记一次；原有插件不减少。
+1. 版本为 2.3.0；`dsh.profile.bundles` 中预设仅登记一次；原有插件不减少。
 2. `package.json` 的 `exports` 指向的文件齐全，三个新 helper 被安装：`environment-context.mjs`、`powershell-runtime.mjs`、`shell-workdir.mjs`。
 3. 组合 schema 校验通过；`persona.complete:false`，`includeRuntimeContext:false`；平台互斥与 `wsl-` 自禁用仍保留。
-4. 在真实 prompt registry 中看到 `[ENV]` 与 `[MODEL]`；切换模型后下一请求使用新路由 ID，不采用旧 `agent.options`。
-5. 直接通过所注册 `pwsh` 工具验证：实际 `$PSVersionTable.PSVersion`、进程路径、中文输出与 cwd。简报版本应与工具一致。
-6. 非法工作目录在 spawn 之前拒绝；不存在的目录导致 spawn/cd 报错，不能输出后续命令的成功标志。
-7. 当前会话未重启时明确说明“磁盘已更新，运行中实例需重启生效”，不要冒称已经热更新。
+4. persona 前缀含 `Reasoning language: think in Chinese` 一条（v2.3.0 起的中文思考规则），且未因此把 `complete` 改成 `true`。
+5. 在真实 prompt registry 中看到 `[ENV]` 与 `[MODEL]`；切换模型后下一请求使用新路由 ID，不采用旧 `agent.options`。
+6. 直接通过所注册 `pwsh` 工具验证：实际 `$PSVersionTable.PSVersion`、进程路径、中文输出与 cwd。简报版本应与工具一致。
+7. 非法工作目录在 spawn 之前拒绝；不存在的目录导致 spawn/cd 报错，不能输出后续命令的成功标志。
+8. 当前会话未重启时明确说明“磁盘已更新，运行中实例需重启生效”，不要冒称已经热更新。
 
 ## 5. 回归测试
 

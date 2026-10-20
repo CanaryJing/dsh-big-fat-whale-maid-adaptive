@@ -1,8 +1,8 @@
 {
   "name": "dsh-preset-big-fat-whale-maid-adaptive",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "private": true,
-  "description": "DS女仆长模式 — cached environment + live model identity, safe workdirs, verified PowerShell 7 binding, full tool catalog.",
+  "description": "DS女仆长模式 — Chinese-reasoning system prompt, cached environment + live model identity, safe workdirs, verified PowerShell 7 binding, full tool catalog.",
   "type": "module",
   "license": "MIT",
   "exports": {

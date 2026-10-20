@@ -29,6 +29,7 @@
 5. Git Bash 全局优先。需要 PowerShell、`.ps1`、Windows UI 自动化时调用 `pwsh` 工具：优先验证绑定 PowerShell 7，没有 7 才使用系统默认后端并显示实际版本。执行失败不能触发另一次隐式降级。
 6. 工作目录必须为相应后端支持的绝对路径；显式空值、相对路径、NUL、未知世界直接报错。Git Bash 的 `cd -- <quoted>` 失败后绝不执行后续命令。不要恢复 SystemRoot 静默回退。
 7. 平台 shell/editor 分派互斥；保留 `wsl-` 变体自禁用条件；服务行按需隔离 realm。
+8. persona 前缀必须保留 `Reasoning language: think in Chinese (简体中文)` 这一条（v2.3.0 起）：中文思考由系统提示词强制，不依赖记忆或用户当场提醒。改写人设时不得删除，也不得因此把 `complete` 改成 `true`。
 
 ## 安装
 

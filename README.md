@@ -1,8 +1,18 @@
-# DS女仆长模式 · v2.2.0
+# DS女仆长模式 · v2.3.0
 
-DSH 的个人工程预设：**全量工具首轮开放、可靠环境简报、实时请求模型 ID、安全工作目录、PowerShell 7 优先绑定**，保留温柔严谨的蓝发蓝瞳鲸鱼娘女仆长风格。
+DSH 的个人工程预设：**系统提示词要求中文思考、全量工具首轮开放、可靠环境简报、实时请求模型 ID、安全工作目录、PowerShell 7 优先绑定**，保留温柔严谨的蓝发蓝瞳鲸鱼娘女仆长风格。
 
 整个目录是一个 DSH bundle；自定义模块只使用 Node 内置模块及包内导入，不依赖 `dsh-wsl-workspace`。组合本身仍依赖 DSH 官方插件与服务，不是脱离 DSH 的独立运行时。
+
+## v2.3.0 重点：中文思考写进系统提示词
+
+「用中文思考」升级为 persona 前缀里的**第一条显式规则**，不再依赖记忆条目、会话习惯或用户当场提醒：
+
+- 推理、权衡、计划、验证与自我纠错一律用简体中文书写，不得悄悄换成别的语言；
+- 代码、命令、文件路径、标识符、被引用的日志与文档正文保持原文语言，不做翻译；
+- 对用户可见的回复仍跟随用户语言（用户说中文就用中文）。
+- `complete:false` 不变，因此该规则与环境段、模型 ID 段、任务模式叠加句共存。
+- 旧格式 `agent.cordis.yml` 的 persona 同步补上同一条，历史备查文件不再与现版自相矛盾。
 
 ## v2.2.0 重点
 
@@ -50,7 +60,7 @@ DSH 的个人工程预设：**全量工具首轮开放、可靠环境简报、�
  dsh plugin --profile web add "file:/absolute/path/to/big-fat-whale-maid-adaptive"
 
 # 或安装 GitHub Release 下载的 tgz
- dsh plugin --profile web add "file:/absolute/path/to/dsh-preset-big-fat-whale-maid-adaptive-2.2.0.tgz"
+ dsh plugin --profile web add "file:/absolute/path/to/dsh-preset-big-fat-whale-maid-adaptive-2.3.0.tgz"
 ```
 
 - 使用实际宿主对应的官方插件管理 CLI。Electron 的 `desktop` 档须用桌面版自带 CLI 管理。
@@ -92,6 +102,7 @@ v2 起已移除首轮锚定、注入门控、四阶段披露和按需解锁。�
 
 ## 版本历史
 
+- **v2.3.0**：系统提示词（persona 前缀）要求以中文进行思考，旧备查人设同步；其余行为与 v2.2.0 一致。详见 [发行说明](./releases/v2.3.0.md)。
 - **v2.2.0**：可靠系统环境段、实时模型路由 ID、PowerShell 版本验证绑定与默认回退、安全工作目录、精简人设、自包含回归测试。详见 [发行说明](./releases/v2.2.0.md)。
 - **v2.1.2**：修复 DSH v4 会话格式不接受裸 `kind: plugin` 的消息来源问题。
 - **v2.1.1**：预设内部模块改用包内子路径，修复相对路径导致的装载失败。

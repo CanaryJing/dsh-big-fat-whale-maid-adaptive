@@ -59,6 +59,7 @@ test('real DSH registry + persona + official model selection preserve ENV and cu
         const assembly = await prompt.assemble({ scope: agentKey, agent })
         const rendered = renderPrompt(assembly)
         assert.match(rendered, /\[ENV\] host=integration-host/)
+        assert.match(rendered, /think in Chinese \(简体中文\)/)
         assert.match(rendered, /\{\{literal-braces\}\}/)
         assert.ok(rendered.includes(`model=${route.model}; provider=${route.provider}`))
         assert.doesNotMatch(rendered, /stale-initial|stale-provider/)
