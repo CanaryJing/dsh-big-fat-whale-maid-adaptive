@@ -2,12 +2,11 @@
  * router-progressive — 任务模式路由 + 交付 gate（女仆长适配版 · 全量工具版）。
  *
  * 历史：本文件曾实现「四阶段渐进工具披露」（router-standard v1.20 语义移植）。
- * 2026-09 起按主人要求改为「工具一次性全部开放」：
- *   - 首轮锚定（tool-bootstrap）、注入门控（context-gate）、按需解锁
- *     （dev-tool-search）均已从 agent.cordis.yml 卸载；
- *   - 本插件不再过滤/限制工具目录——所有已注册工具从第一轮起全部可见；
+ * 2026-09 起按主人要求改为「工具一次性全部开放」，2026-10-22 起（v3.0）
+ * 交给 tool-gate.mjs 做「常驻核心 + 按需解锁」：
+ *   - 本插件不再过滤/限制工具目录，工具可见性由 tool-gate 决定；
  *   - 保留：任务模式路由（react/spec/weak 叠加句注入 persona）、
- *     dev_router_status（路由状态自检）、delivery_check（交付 gate）。
+ *     dev_router_status（路由 + 门控状态自检）、delivery_check（交付 gate）。
  *
  * 与 router-core.mjs 的关系：router-core 是纯函数库（无 apply，不作为插件装载），
  * 本插件以相对路径 import 复用 classifyTask / overlayFor / sessionMode 等。
@@ -16,12 +15,13 @@
 import {
   overlayFor, bandFor, sessionMode,
 } from './router-core.mjs'
+import { describeGate } from './tool-gate.mjs'
 import { readFileSync, statSync } from 'node:fs'
 
 export const name = 'whale-maid-router'
 export const inject = ['systemPrompt', 'tools']
 
-const ROUTER_VERSION = 'v2.0.0-maid-full'
+const ROUTER_VERSION = 'v2.1.0-maid-gated'
 
 function toJsonSchema(spec) {
   const buildProp = (meta) => {
@@ -94,7 +94,7 @@ export function apply(ctx, config) {
         text: [
           'router=whale-maid-router (' + ROUTER_VERSION + ')',
           'mode=' + String(mode) + ' (band=' + bandFor(mode) + ')',
-          'fullCatalog=open (all registered tools visible from request #1; no phase gating)',
+          'toolCatalog=' + describeGate(exec?.agent),
         ].join('\n'),
       }
     },

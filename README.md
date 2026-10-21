@@ -1,8 +1,26 @@
-# DS女仆长模式 · v2.3.0
+# DS女仆长模式 · v3.0.0
 
-DSH 的个人工程预设：**系统提示词要求中文思考、全量工具首轮开放、可靠环境简报、实时请求模型 ID、安全工作目录、PowerShell 7 优先绑定**，保留温柔严谨的蓝发蓝瞳鲸鱼娘女仆长风格。
+DSH 的个人工程预设：**系统提示词要求中文思考、全能工具面但常驻核心按需解锁、可靠环境简报、实时请求模型 ID、安全工作目录、PowerShell 7 优先绑定**，保留温柔严谨的蓝发蓝瞳鲸鱼娘女仆长风格。
 
 整个目录是一个 DSH bundle；自定义模块只使用 Node 内置模块及包内导入，不依赖 `dsh-wsl-workspace`。组合本身仍依赖 DSH 官方插件与服务，不是脱离 DSH 的独立运行时。
+
+## v3.0.0 重点：全能 ≠ 全量常驻
+
+v2 的「全量工具首轮开放」是给当年不会用工具搜索的 v4 补课。模型换强之后，这笔账变成只付成本：
+
+- 本机 109 个会话、7255 次 `tool/call` 的实测分布：**8 个工具覆盖 86.5%**，前 25 个覆盖 97.1%；
+- 目录里约 110 个工具，**约四成从未被调用过**，却每轮重发 schema。
+
+v3 的做法：
+
+- **常驻核心 29 个**（`tool-gate.mjs` 的 `DEFAULT_RESIDENT_TOOLS`）：shell 三通道、文件读写与图像、搜索、任务/交付、技能、记忆读取、交互与目标、后台作业、子代理协作；
+- **其余全部按需解锁**：`dev_tool_search` 支持关键词搜索全量目录与按精确名解锁，解锁从下一次请求起生效；
+- **解锁持久可恢复**：解锁名写入 `tool/call` 会话事件，重启/恢复后冷扫描重建；
+- **子代理默认不裁剪**（`includeSubagents: false`），避免被派活的子代理缺工具卡死；
+- **一键回退**：`mode: full` 回到全量首轮可见，不用卸载插件；
+- **安全网**：门控工具缺失或过滤器异常时自动降级全量，绝不锁死会话。
+
+门控裁的是**模型可见 schema**，不是权限：被锁的工具直接调用会得到 `UNKNOWN_TOOL`，解锁后仍走原有审批与沙箱策略。
 
 ## v2.3.0 重点：中文思考写进系统提示词
 
@@ -60,7 +78,7 @@ DSH 的个人工程预设：**系统提示词要求中文思考、全量工具�
  dsh plugin --profile web add "file:/absolute/path/to/big-fat-whale-maid-adaptive"
 
 # 或安装 GitHub Release 下载的 tgz
- dsh plugin --profile web add "file:/absolute/path/to/dsh-preset-big-fat-whale-maid-adaptive-2.3.0.tgz"
+ dsh plugin --profile web add "file:/absolute/path/to/dsh-preset-big-fat-whale-maid-adaptive-3.0.0.tgz"
 ```
 
 - 使用实际宿主对应的官方插件管理 CLI。Electron 的 `desktop` 档须用桌面版自带 CLI 管理。
@@ -85,7 +103,7 @@ PWSH_RUNTIME_REAL_PATH='C:\Program Files\PowerShell\7\pwsh.exe' npm test
 
 ## 能力与边界
 
-- 所有**已注册且可用**工具从第一轮开放，不代表所有提供者均已安装、认证；技能按需 `skill_search` / `skill_load`。
+- 所有**已注册且可用**工具都在目录里，但首轮只常驻高频核心；其余用 `dev_tool_search` 解锁。能力齐全不代表所有提供者均已安装、认证；技能按需 `skill_search` / `skill_load`。
 - 保留原有任务分类、子代理、workflow、goal、计划模式、交付检查工具。本次没有重写任务分类器或 `delivery_check` 校验器。
 - `delivery_check` 是检查辅助与模型遵守的交付约定，不是不可绕过的安全门禁。
 - shell 路由建议不是 OS 沙箱；真实权限、审批、网络边界由宿主、当前账户和 DSH 底座决定。
@@ -93,7 +111,7 @@ PWSH_RUNTIME_REAL_PATH='C:\Program Files\PowerShell\7\pwsh.exe' npm test
 
 ## 来源与致谢
 
-v2 起已移除首轮锚定、注入门控、四阶段披露和按需解锁。仍沿用部分通用模块：
+v3 的按需解锁是自研门控（`tool-gate.mjs`：常驻核心 + `dev_tool_search` + 会话事件持久化），不依赖、也没有恢复首轮锚定与四阶段披露。仍沿用部分通用模块：
 
 - [风神 / dsh-routing-suite](https://github.com/yjh051108/dsh-routing-suite)：任务分类、模式提示、交付检查。
 - [明神 / dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard)：技能按需加载、指令文件提示、epoch 追踪。
@@ -102,6 +120,7 @@ v2 起已移除首轮锚定、注入门控、四阶段披露和按需解锁。�
 
 ## 版本历史
 
+- **v3.0.0**：全能工具面改为「常驻核心 + 按需解锁」（`tool-gate.mjs` / `dev_tool_search`），解锁持久化、子代理不裁剪、`mode: full` 可回退；`dev_router_status` 报告真实门控状态。详见 [发行说明](./releases/v3.0.0.md)。
 - **v2.3.0**：系统提示词（persona 前缀）要求以中文进行思考，旧备查人设同步；其余行为与 v2.2.0 一致。详见 [发行说明](./releases/v2.3.0.md)。
 - **v2.2.0**：可靠系统环境段、实时模型路由 ID、PowerShell 版本验证绑定与默认回退、安全工作目录、精简人设、自包含回归测试。详见 [发行说明](./releases/v2.2.0.md)。
 - **v2.1.2**：修复 DSH v4 会话格式不接受裸 `kind: plugin` 的消息来源问题。

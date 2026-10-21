@@ -37,7 +37,7 @@
       config:
         id: big-fat-whale-maid-adaptive
         name: 'DS女仆长模式'
-        description: '全量工具首轮开放；系统提示词要求以中文进行思考；每轮保留缓存环境简报与当前请求模型 ID；Git Bash 优先，PowerShell 7 优先验证绑定，无 7 才回退默认 PowerShell；安全工作目录、任务路由与精简鲸鱼娘女仆长人设。'
+        description: '全能工具面 + 常驻核心按需解锁（dev_tool_search，可一键回退全量）；系统提示词要求以中文进行思考；每轮保留缓存环境简报与当前请求模型 ID；Git Bash 优先，PowerShell 7 优先验证绑定，无 7 才回退默认 PowerShell；安全工作目录、任务路由与精简鲸鱼娘女仆长人设。'
         order: 26
         plugins:
           # ── task-mode routing + delivery gate ────────────────────────────
@@ -306,6 +306,21 @@
             config:
               fetch: false
               searchTimeoutMs: 60000
+
+          # ── tool gate：常驻核心 + 按需解锁（v3.0）───────────────────────
+          # 全能 ≠ 全量常驻。所有已注册工具仍然可用，但首轮只常驻高频核心
+          # （名单见 tool-gate.mjs 的 DEFAULT_RESIDENT_TOOLS，按历史 109 个
+          # 会话 / 7255 次调用挑出），其余经 dev_tool_search 解锁。
+          # 解锁状态写入持久会话事件，恢复会话后依然有效。
+          # 一键回退：把 mode 改成 full（不卸载插件）。
+          - id: tool-gate
+            name: dsh-preset-big-fat-whale-maid-adaptive/tool-gate.mjs
+            config:
+              mode: progressive
+              # 子代理默认不裁剪（它们常被派去跑具体任务，缺工具会卡死）。
+              includeSubagents: false
+              # residentTools 省略即用默认核心名单；要覆盖时写完整数组。
+              # maxSearchResults: 25
 
           # dsh 0.1.6+ added this row; it post-dates the legacy composition.
           - id: present

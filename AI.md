@@ -5,12 +5,13 @@
 - `package.json` 的 `dsh.bundle.patch` 指向 `cordis.patch.yml`，这是当前唯一权威组合。
 - `agent.cordis.yml`、`preset.yml` 是旧格式备查，不参与加载，不要修改它们来配置现版。
 - 自定义模块仅依赖 Node 内置模块及本包相对导入；组合仍依赖 DSH 官方插件与服务。
-- 所有已注册工具从首轮可见；不重新引入 bootstrap/context-gate/dev-tool-search。
+- v3.0 起工具面由 `tool-gate.mjs` 治理：首轮只常驻 `DEFAULT_RESIDENT_TOOLS`，其余用 `dev_tool_search` 解锁；`mode: full` 一键回退全量。旧的 `dev-tool-search.mjs` / `tool-bootstrap.mjs` / `context-gate.mjs` 是 v1 anchored 实现，**保持不挂载**，不要与原语不同的新门控同时启用。
 
-## v2.2 关键模块
+## v3.0 关键模块
 
 | 文件 | 作用 |
 |---|---|
+| `tool-gate.mjs` | 常驻核心裁剪、`dev_tool_search` 解锁、会话事件持久化、`mode: full` 回退、`describeGate()` 状态自检 |
 | `environment-context.mjs` | 每轮系统环境段与请求 model/provider 模板；等待首次异步探测 |
 | `env-probe.mjs` | 环境采集、缓存刷新、Git Bash/pwsh 工具 |
 | `powershell-runtime.mjs` | 验证 PowerShell 版本、固定实际可执行文件 |
@@ -30,6 +31,12 @@
 6. 工作目录必须为相应后端支持的绝对路径；显式空值、相对路径、NUL、未知世界直接报错。Git Bash 的 `cd -- <quoted>` 失败后绝不执行后续命令。不要恢复 SystemRoot 静默回退。
 7. 平台 shell/editor 分派互斥；保留 `wsl-` 变体自禁用条件；服务行按需隔离 realm。
 8. persona 前缀必须保留 `Reasoning language: think in Chinese (简体中文)` 这一条（v2.3.0 起）：中文思考由系统提示词强制，不依赖记忆或用户当场提醒。改写人设时不得删除，也不得因此把 `complete` 改成 `true`。
+9. 工具门控纪律（v3.0.0 起）：
+   - 裁剪只作用于 `system-prompt/assemble` 的 `tools`，不动 sections；`ctx.tools.schemas()` 必须保持全量，否则 `dev_tool_search` 搜不到被锁工具。
+   - 门控工具 `dev_tool_search` 必须常驻且能注册成功；缺失时过滤器降级全量并只告警一次，宁可多花 token 也不锁死会话。
+   - 解锁集合从持久 `tool/call` 事件重建，不要改成只存内存或依赖其它服务；压缩后靠内存状态继续，不重新扫描。
+   - 子代理默认不裁剪（`includeSubagents: false`）；改成 `true` 前先确认子代理任务不依赖非常驻工具。
+   - 调整 `residentTools` 时保持精简（当前 29 个）；每加一个常驻工具，所有会话每轮都要多付它的 schema。
 
 ## 安装
 
