@@ -124,9 +124,14 @@ test('brief reports missing WSL honestly, cache time, probe warnings, and all en
 
 test('current bundle permits environment sections instead of discarding them via complete:true', () => {
   const bundle = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
+  const policy = readFileSync(new URL('../shell-policy.mjs', import.meta.url), 'utf8')
   assert.match(bundle, /^\s+complete: false$/m)
   assert.doesNotMatch(bundle, /^\s+complete: true$/m)
-  assert.match(bundle, /pwsh tool bound to its verified executable/)
-  assert.match(bundle, /system-default fallback only when 7 is unavailable/)
+  // The persona references the single routing source instead of embedding a
+  // second, drift-prone copy of the shell table.
+  assert.match(bundle, /shell-policy\.mjs/)
+  assert.match(bundle, /single source of truth/i)
+  assert.match(policy, /verified bound pwsh tool handles general Windows tasks/)
+  assert.match(policy, /PowerShell-specific commands, \.ps1 scripts, or Windows UI automation/)
   assert.doesNotMatch(bundle, /12-year-old|double row of gold buttons/)
 })

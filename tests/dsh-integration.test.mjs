@@ -16,6 +16,7 @@ test('real DSH registry + persona + official model selection preserve ENV and cu
   const { SystemPrompt, renderPrompt } = await load('@deepseek-ai/dsh-system-prompt')
   const { createScope, scopeTarget } = await load('@deepseek-ai/dsh-scope')
   const { installModelSelection } = await load('@deepseek-ai/dsh-agent')
+  const { ToolRuntime } = await load('@deepseek-ai/dsh-tools')
   const persona = await load('@deepseek-ai/dsh-persona')
   const YAML = require('js-yaml')
   const JsExpr = new YAML.Type('tag:yaml.org,2002:js', { kind: 'scalar', construct: (value) => value })
@@ -26,6 +27,9 @@ test('real DSH registry + persona + official model selection preserve ENV and cu
 
   const root = new Context()
   const prompt = new SystemPrompt(root, { includeHarnessIdentity: true })
+  // The real registry, not a Map-backed mock: delivery_check must pass the
+  // engine's own schema validation and be visible through schemas().
+  const toolRuntime = new ToolRuntime(root, {})
   prompt.variable('model', ({ agent }) => agent?.options.model)
   prompt.variable('provider', ({ agent }) => agent?.options.provider)
   // Preset contributions belong to a standing scope; each agent joins below it.
@@ -35,11 +39,16 @@ test('real DSH registry + persona + official model selection preserve ENV and cu
   const agentScope = createScope(root, agentKey, { parent: presetKey })
   try {
     persona.apply(presetScope.ctx, personaConfig)
-    applyRouter({
-      on: (...args) => presetScope.ctx.on(...args),
-      effect: (fn) => fn(),
-      tools: { register: () => () => {} },
-    }, {})
+    applyRouter(presetScope.ctx, {})
+    const deliveryTool = toolRuntime.get('delivery_check', presetKey)
+    assert.ok(deliveryTool, 'delivery_check must register in the real DSH tool registry')
+    assert.ok(toolRuntime.schemas(presetKey).some((schema) => schema.name === 'delivery_check'))
+    const deliveryParameters = deliveryTool.parameters
+    assert.deepEqual(deliveryParameters.required, ['file', 'evidence'])
+    assert.deepEqual(deliveryParameters.properties.evidence.required, ['items'])
+    assert.deepEqual(deliveryParameters.properties.evidence.properties.items.items.required, ['kind', 'label', 'result'])
+    assert.equal(deliveryParameters.properties.items, undefined, 'nested required must live on the object schema')
+    assert.equal(deliveryParameters.properties.evidence.properties.items.items.properties.kind.type, 'string')
     registerEnvironmentContext(presetScope.ctx, {
       getSnapshot: () => ({ host: 'integration-host' }),
       describe: (snapshot, { agent }) => `[ENV] host=${snapshot.host}; cwd=${agent.session.header.cwd}`,

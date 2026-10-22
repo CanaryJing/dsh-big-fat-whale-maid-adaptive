@@ -1,13 +1,16 @@
 /**
- * tool-gate — 女仆长 v3.0「全能但常驻精简」工具门控。
+ * tool-gate — 女仆长 v3.0「全能但常驻精简」工具门控（v3.1 增加工具组）。
  *
  * 目标（2026-10-22 主人决定）：保留全部已注册工具的能力（全能），
  * 但不再每轮把整份目录塞进请求。做法：
  *
  *   1. 常驻核心（residentTools）：按历史 109 个会话 / 7255 次调用的实际
  *      分布挑出覆盖 90%+ 的高频工具，首轮可见；
- *   2. 其余工具按需解锁：模型调用 `dev_tool_search` 搜索或按名解锁，
- *      解锁记录写入持久会话事件，下一次请求起可见（恢复会话同样有效）；
+ *   2. 其余工具按需解锁：模型调用 `dev_tool_search` 按 query / toolNames /
+ *      groups 解锁；实际 accepted 精确名经官方 `tool/result.meta` 持久化，
+ *      下一次请求起可见（恢复会话同样有效）。恢复只信与本会话一条
+ *      `dev_tool_search` callId 配对成功的 result；没有 result 的中断调用
+ *      保持锁定，需要重新解锁；
  *   3. `mode: full` 一键回到旧的「全量首轮可见」，不卸载本插件即可回退。
  *
  * 为什么读会话事件而不是另存状态：会话日志本身就是持久且可恢复的，
@@ -26,6 +29,88 @@ export const inject = ['tools']
 
 /** 门控工具自身的名字，永不裁剪。 */
 export const GATE_TOOL = 'dev_tool_search'
+
+/**
+ * 固定工具组（v3.1.0）。组只做「从实际可见目录里挑名字」的展开，不授予任何
+ * 权限，也不会解锁 ctx.tools.schemas(exec.agent) 里不存在的工具。
+ */
+export const TOOL_GROUPS = Object.freeze({
+  office: {
+    description: '办公文档 office_*（Word / Excel / PowerPoint 的打开、读取、编辑、渲染、保存）',
+    match: (name) => name.startsWith('office_'),
+  },
+  'repo-files': {
+    description: '仓库文件 ops_inspect_local_file / ops_grep / ops_glob / ops_replace / ops_write_file / ops_edit_file / ops_diff / ops_stat / ops_copy / ops_move / ops_remove',
+    names: [
+      'ops_inspect_local_file', 'ops_grep', 'ops_glob', 'ops_replace', 'ops_write_file',
+      'ops_edit_file', 'ops_diff', 'ops_stat', 'ops_copy', 'ops_move', 'ops_remove',
+    ],
+  },
+  sessions: {
+    description: '会话检索 session_search / session_trace / session_event_*',
+    names: ['session_search', 'session_trace'],
+    match: (name) => name.startsWith('session_event_'),
+  },
+  team: {
+    description: '多代理 spawn_teammate / team_task_* / wait_agent / interrupt_agent / send_message / list_agents',
+    names: ['spawn_teammate', 'wait_agent', 'interrupt_agent', 'send_message', 'list_agents'],
+    match: (name) => name.startsWith('team_task_'),
+  },
+  terminal: {
+    description: '终端会话 terminal_*（open / send / read / signal / list / close）',
+    match: (name) => name.startsWith('terminal_'),
+  },
+  'memory-write': {
+    description: '记忆写入 mcp__openviking__* 除 read / search 外的全部（remember、edit、write、add_resource、find、tree、forget…）',
+    match: (name) => name.startsWith('mcp__openviking__')
+      && name !== 'mcp__openviking__read'
+      && name !== 'mcp__openviking__search',
+  },
+})
+
+/** 某个名字是否属于固定组。 */
+export function groupMatches(groupName, toolName) {
+  const group = TOOL_GROUPS[groupName]
+  if (group === undefined) return false
+  if (Array.isArray(group.names) && group.names.includes(toolName)) return true
+  return typeof group.match === 'function' && group.match(toolName) === true
+}
+
+/**
+ * 把精确名 + 组展开成实际目录里的名字。只返回目录中真实存在的工具；
+ * 未知名与未知组分别报告，合法项继续处理。
+ */
+export function resolveToolRequest({ toolNames = [], groups = [] } = {}, schemas = []) {
+  const known = new Set(schemas.map((schema) => schema?.name).filter((name) => typeof name === 'string'))
+  const accepted = []
+  const seen = new Set()
+  const accept = (name) => {
+    if (known.has(name) && !seen.has(name)) {
+      seen.add(name)
+      accepted.push(name)
+    }
+  }
+  const requestedNames = [...new Set(toolNames.filter((name) => typeof name === 'string' && name.length > 0))]
+  for (const name of requestedNames) accept(name)
+  const missingNames = requestedNames.filter((name) => !known.has(name))
+
+  const unknownGroups = []
+  const emptyGroups = []
+  const uniqueGroups = [...new Set(groups.filter((group) => typeof group === 'string' && group.length > 0))]
+  for (const groupName of uniqueGroups) {
+    if (TOOL_GROUPS[groupName] === undefined) {
+      unknownGroups.push(groupName)
+      continue
+    }
+    const matched = [...known].filter((name) => groupMatches(groupName, name))
+    if (matched.length === 0) {
+      emptyGroups.push(groupName)
+      continue
+    }
+    for (const name of matched) accept(name)
+  }
+  return { accepted, missingNames, unknownGroups, emptyGroups }
+}
 
 /**
  * 默认常驻核心：按 2026-09-26 → 10-21 共 109 个会话、7255 次工具调用的
@@ -81,6 +166,7 @@ const runtime = {
   mode: 'full',
   resident: new Set(),
   state: new Map(),
+  gateCalls: new Map(),
   includeSubagents: false,
 }
 
@@ -108,34 +194,135 @@ function positiveInt(value, field, fallback) {
   return value
 }
 
-/** 读一条 tool/call 事件里的解锁名单（arguments 可能是 JSON 字符串或对象）。 */
-function unlockNamesFromEvent(event) {
-  if (event?.type !== 'tool/call') return []
+/** 读一条 tool/call 事件里的精确名单（arguments 可能是 JSON 字符串或对象）。 */
+function gateCallFromEvent(event) {
+  if (event?.type !== 'tool/call') return undefined
   const data = event.data
-  if (data === undefined || data === null) return []
-  if (data.name !== GATE_TOOL) return []
+  if (data === undefined || data === null) return undefined
+  if (data.name !== GATE_TOOL) return undefined
   const raw = data.arguments
   let args = raw
   if (typeof raw === 'string') {
     try {
       args = JSON.parse(raw)
     } catch {
+      return undefined
+    }
+  }
+  if (args === null || typeof args !== 'object') return undefined
+  const toolNames = Array.isArray(args.toolNames)
+    ? args.toolNames.filter((item) => typeof item === 'string' && item.length > 0)
+    : []
+  const groups = Array.isArray(args.groups)
+    ? args.groups.filter((item) => typeof item === 'string' && item.length > 0)
+    : []
+  return {
+    callId: typeof data.callId === 'string' ? data.callId : undefined,
+    toolNames,
+    groups,
+  }
+}
+
+/**
+ * 从 tool/result 的 tool-private meta 读取「实际 accepted 名字」。
+ * 这是 DSH 官方 ToolResult.meta 通道：只随成功结果持久化，失败结果不恢复。
+ * gate 标记是必要条件——调用方还必须证明该 result 与一条 dev_tool_search
+ * tool/call 成功配对，绝不能只看 callId 或只看 meta。
+ *
+ * 返回值区分三种情况：`undefined` = 没有本工具的有效 meta（才允许旧文案回退）；
+ * `[]` = 本工具明确记录「本次没有解锁任何工具」，是权威结果，绝不能回退；
+ * 非空数组 = 本工具明确记录的精确名。
+ */
+function acceptedFromResultEvent(event) {
+  if (event?.type !== 'tool/result' || resultIsError(event)) return undefined
+  const meta = event.data?.meta
+  if (meta === null || typeof meta !== 'object') return undefined
+  if (meta.gate !== GATE_TOOL) return undefined
+  if (!Array.isArray(meta.accepted)) return undefined
+  return meta.accepted.filter((name) => typeof name === 'string' && name.length > 0)
+}
+
+function resultIsError(event) {
+  const data = event?.data
+  return data?.error !== undefined || data?.message?.isError === true
+}
+
+/**
+ * 兼容没有 meta 的 v3.0 成功结果：从本工具固定的成功文案里读 accepted 精确名。
+ * 只读取我们自己的结果文本，不执行、不解析其它工具；调用方必须先证明该
+ * result 与一条 dev_tool_search callId 配对成功。
+ */
+function acceptedFromGateText(event) {
+  if (event?.type !== 'tool/result' || resultIsError(event)) return []
+  const content = event.data?.message?.content
+  if (!Array.isArray(content)) return []
+  const text = content.map((block) => (typeof block?.text === 'string' ? block.text : '')).join('\n')
+  const match = /已解锁（下一次请求起可见）：([^\n]+)/.exec(text)
+  if (match === null) return []
+  return match[1].split(/[,，]\s*/).map((name) => name.trim()).filter((name) => name.length > 0)
+}
+
+/**
+ * 冷启动扫一遍持久日志，重建该会话的解锁集合（恢复会话同样有效）。
+ *
+ * 只有与一条 dev_tool_search tool/call 成功配对的 tool/result 才可信：
+ *   - 新格式：meta.gate === GATE_TOOL 且 meta.accepted 是权威精确名
+ *     （空数组表示本次没有解锁任何工具，同样权威，不回退旧文案）；
+ *   - v3.0 兼容：完全没有 meta 时只认本工具固定的成功文案；
+ *   - 组只持久化展开后的精确名，恢复时绝不重新展开组；
+ *   - 失败 result 不恢复；只有 tool/call、没有 result 的中断调用也不恢复
+ *     （旧日志无法区分成功与中断，保守保持锁定，需要重新调用解锁）。
+ * 其它工具的 result 文本/meta 即使伪造 gate 名字也不会被采信。
+ */
+function sessionEvents(session) {
+  if (Array.isArray(session?.events)) return session.events
+  if (typeof session?.snapshotEvents === 'function') {
+    try {
+      return session.snapshotEvents()
+    } catch {
       return []
     }
   }
-  if (args === null || typeof args !== 'object') return []
-  const names = Array.isArray(args.toolNames) ? args.toolNames : []
-  return names.filter((item) => typeof item === 'string' && item.length > 0)
+  return []
 }
 
-/** 冷启动扫一遍持久日志，重建该会话的解锁集合（恢复会话同样有效）。 */
+/** 本会话里所有 dev_tool_search tool/call，按 callId 配对。 */
+function gateCallsForSession(session) {
+  const calls = new Map()
+  const live = runtime.gateCalls.get(session?.id)
+  if (live !== undefined) {
+    for (const [callId, call] of live) calls.set(callId, call)
+  }
+  for (const event of sessionEvents(session)) {
+    const call = gateCallFromEvent(event)
+    if (call?.callId !== undefined) calls.set(call.callId, call)
+  }
+  return calls
+}
+
+/** 从一条与 gate 调用配对的成功 result 里取真实 accepted 精确名。 */
+function acceptedFromPairedResult(event) {
+  if (resultIsError(event)) return []
+  const fromMeta = acceptedFromResultEvent(event)
+  // 空数组也是本工具的权威结果（例如只做搜索、没有解锁任何工具）：
+  // 只做搜索时第三方工具描述里可能恰好含“已解锁…”文案，绝不能回退。
+  if (fromMeta !== undefined) return fromMeta
+  const meta = event?.data?.meta
+  // 旧文案回退只服务于完全没有 meta 的 v3.0 结果。其它工具的 meta（包括
+  // 伪造 gate 字段/形状不完整）不能被当作本工具成功，也不触发文案回退。
+  if (meta !== null && typeof meta === 'object') return []
+  return acceptedFromGateText(event)
+}
+
 function scanSession(session) {
-  const events = typeof session.snapshotEvents === 'function'
-    ? session.snapshotEvents()
-    : (session.events ?? [])
   const unlocked = new Set()
-  for (const event of events) {
-    for (const toolName of unlockNamesFromEvent(event)) unlocked.add(toolName)
+  const calls = gateCallsForSession(session)
+  if (calls.size === 0) return { unlocked }
+  for (const event of sessionEvents(session)) {
+    if (event?.type !== 'tool/result') continue
+    const callId = event.data?.message?.toolCallId
+    if (typeof callId !== 'string' || !calls.has(callId)) continue
+    for (const name of acceptedFromPairedResult(event)) unlocked.add(name)
   }
   return { unlocked }
 }
@@ -163,10 +350,20 @@ export function describeGate(agent) {
   return `progressive (resident=${runtime.resident.size}, unlocked=${entry.unlocked.size}, gate=${GATE_TOOL})`
 }
 
-function textOutput() {
+function gateOutput() {
   return {
-    schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } }, required: ['text'] },
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        text: { type: 'string' },
+        accepted: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['text', 'accepted'],
+    },
     render: (_args, value) => [{ type: 'text', text: value.text }],
+    // 只把真实 accepted 精确名写进 tool/result.meta；组名永远不持久化。
+    presentationMeta: (_args, value) => ({ gate: GATE_TOOL, accepted: [...value.accepted] }),
   }
 }
 
@@ -233,13 +430,31 @@ export function apply(ctx, config) {
     }
   }
 
-  // ── 增量维护解锁集合：工具执行完会记录 tool/call，下一次 assemble 生效 ──
+  // ── 增量维护解锁集合：只有与 gate callId 配对的成功 result 才是事实 ──
   ctx.on('session/event', (session, event) => {
-    if (session === undefined || event === undefined) return
-    const names = unlockNamesFromEvent(event)
-    if (names.length === 0) return
+    if (session === undefined || session.id === undefined || event === undefined) return
+    if (event.type === 'tool/call') {
+      const call = gateCallFromEvent(event)
+      if (call?.callId !== undefined) {
+        let calls = runtime.gateCalls.get(session.id)
+        if (calls === undefined) {
+          calls = new Map()
+          runtime.gateCalls.set(session.id, calls)
+        }
+        calls.set(call.callId, call)
+      }
+      return
+    }
+    if (event.type !== 'tool/result') return
+    const callId = event.data?.message?.toolCallId
+    if (typeof callId !== 'string') return
+    // Pair with THIS session's dev_tool_search call. A result from any other
+    // tool is ignored even when it carries meta.gate or the success wording.
+    if (!gateCallsForSession(session).has(callId)) return
+    const accepted = acceptedFromPairedResult(event)
+    if (accepted.length === 0) return
     const entry = entryFor(session)
-    for (const toolName of names) entry.unlocked.add(toolName)
+    for (const toolName of accepted) entry.unlocked.add(toolName)
   })
 
   // ── 门控本体：只裁 tools，不动 sections ────────────────────────────────
@@ -269,31 +484,36 @@ export function apply(ctx, config) {
     })
   }
 
-  // ── 模型侧入口：搜索 + 解锁 ───────────────────────────────────────────
+  // ── 模型侧入口：搜索 + 按精确名/组解锁 ──────────────────────────────
   ctx.tools.register({
     name: GATE_TOOL,
     description: [
-      '发现并解锁当前**不可见**的工具。',
+      '发现并解锁当前**不可见**的工具（只改变可见性，不授予权限）。',
       '',
       '本会话只常驻一组高频核心工具（shell、文件读写、搜索、任务、技能、记忆读取、子代理协作）。其余工具仍然可用，但需要先通过本工具解锁：',
-      '  • 传 `query` 搜索全量目录（返回匹配的工具名和一行描述）；',
+      '  • 传 `query` 搜索全量目录（任一关键词命中即参与打分，不是全部关键词 AND）；',
       '  • 传 `toolNames`（精确名数组）解锁，下一次请求起可见，直到会话结束或压缩后仍保留；',
-      '  • 两者可同时传：一次搜索 + 解锁。',
+      '  • 传 `groups`（固定组数组）批量解锁：office / repo-files / sessions / team / terminal / memory-write。组只从当前实际目录展开；',
+      '  • 三者可同时传：一次搜索 + 解锁。',
       '',
       '需要下列能力时，务必先搜索/解锁，不要用 bash 硬凑或宣称做不到：',
       ...UNLOCKABLE_INDEX.map((line) => `  - ${line}`),
       '',
-      '注意：搜索为空只代表没有工具同时命中全部关键词，不代表工具不存在。确知名字时直接解锁：dev_tool_search({"toolNames":["office_open"]})。',
-      '无参调用返回当前门控概览（常驻数量、已解锁数量）。',
+      '注意：搜索为空只代表没有工具命中这些关键词，不代表工具不存在。确知名字时直接解锁：dev_tool_search({"toolNames":["office_open"]})。',
+      '无参调用返回当前门控概览（常驻数量、已解锁数量、固定组及用途）。',
     ].join('\n'),
     parameters: toJsonSchema({
       query: { type: 'string', required: false, description: '搜索关键词（1-2 个词最准，例如 "office"、"terminal"）' },
       toolNames: { type: 'array', required: false, items: { type: 'string' }, description: '按精确工具名解锁' },
+      groups: { type: 'array', required: false, items: { type: 'string' }, description: '按固定组解锁：office / repo-files / sessions / team / terminal / memory-write' },
     }),
-    output: textOutput(),
+    output: gateOutput(),
     async execute(args, exec) {
       const query = typeof args?.query === 'string' ? args.query.trim() : ''
-      const requested = Array.isArray(args?.toolNames)
+      const requestedGroups = Array.isArray(args?.groups)
+        ? args.groups.filter((item) => typeof item === 'string' && item.length > 0)
+        : []
+      const requestedNames = Array.isArray(args?.toolNames)
         ? args.toolNames.filter((item) => typeof item === 'string' && item.length > 0)
         : []
       const lines = []
@@ -301,26 +521,31 @@ export function apply(ctx, config) {
       let schemas = []
       try {
         // 执行者就是观察 scope：preset 层注册的工具要按 agent 查才看得见。
+        // 组展开也只使用这份实际目录，绝不绕 scope 解锁不可访问工具。
         schemas = ctx.tools.schemas(exec?.agent) ?? []
       } catch (error) {
         lines.push(`目录不可用：${String((error && error.message) || error)}`)
       }
-      const known = new Set(schemas.map((schema) => schema.name))
       const session = exec?.agent?.session
+      const resolved = resolveToolRequest({ toolNames: requestedNames, groups: requestedGroups }, schemas)
 
-      if (requested.length > 0) {
-        const accepted = []
-        const missing = []
-        for (const toolName of requested) {
-          if (known.has(toolName)) accepted.push(toolName)
-          else missing.push(toolName)
-        }
-        if (accepted.length > 0 && session !== undefined) {
+      if (resolved.accepted.length > 0) {
+        if (session === undefined) {
+          lines.push(`未解锁：当前没有可持久化的会话（exec.agent.session 不存在），accepted 为空。请在有会话的请求中重试；本次不会返回解锁名单。`)
+        } else {
           const entry = entryFor(session)
-          for (const toolName of accepted) entry.unlocked.add(toolName)
+          for (const toolName of resolved.accepted) entry.unlocked.add(toolName)
+          lines.push(`已解锁（下一次请求起可见）：${resolved.accepted.join(', ')}`)
         }
-        if (accepted.length > 0) lines.push(`已解锁（下一次请求起可见）：${accepted.join(', ')}`)
-        if (missing.length > 0) lines.push(`未找到：${missing.join(', ')} —— 用 query 搜一下确认名字。`)
+      }
+      if (resolved.missingNames.length > 0) {
+        lines.push(`未找到：${resolved.missingNames.join(', ')} —— 用 query 搜一下确认名字，或检查组是否在当前作用域。`)
+      }
+      if (resolved.unknownGroups.length > 0) {
+        lines.push(`未知组：${resolved.unknownGroups.join(', ')} —— 可用组：${Object.keys(TOOL_GROUPS).join(', ')}。其余合法项已继续处理。`)
+      }
+      if (resolved.emptyGroups.length > 0) {
+        lines.push(`组在当前目录没有可解锁工具：${resolved.emptyGroups.join(', ')}（可能未安装或不在本 session scope）。`)
       }
 
       if (query.length > 0) {
@@ -339,18 +564,22 @@ export function apply(ctx, config) {
             const description = String(schema.description ?? '').split('\n')[0].slice(0, 90)
             lines.push(`- ${schema.name}${locked ? ' [未解锁]' : ''}：${description}`)
           }
-          lines.push('用 dev_tool_search({"toolNames":["<精确名>"]}) 解锁。')
+          lines.push('用 dev_tool_search({"toolNames":["<精确名>"]}) 或 {"groups":["office"]} 解锁。')
         }
       }
 
-      if (requested.length === 0 && query.length === 0) {
+      if (requestedNames.length === 0 && requestedGroups.length === 0 && query.length === 0) {
         const unlocked = session !== undefined ? (runtime.state.get(session.id)?.unlocked.size ?? 0) : 0
         lines.push(`门控模式：${mode}`)
         lines.push(`常驻：${runtime.resident.size} 个；已解锁：${unlocked} 个；目录总数：${schemas.length} 个`)
+        lines.push('固定工具组（用 groups 解锁，只展开当前目录实际存在的名字）：')
+        for (const [groupName, group] of Object.entries(TOOL_GROUPS)) {
+          lines.push(`- ${groupName}：${group.description}`)
+        }
         if (mode === 'full') lines.push('当前为全量模式：所有工具本来就可见，本工具的解锁操作不会改变可见性。')
       }
 
-      return { text: lines.join('\n') }
+      return { text: lines.join('\n'), accepted: session === undefined ? [] : resolved.accepted }
     },
   })
 }

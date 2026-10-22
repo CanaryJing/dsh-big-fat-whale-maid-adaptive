@@ -13,6 +13,7 @@ import { promisify } from 'node:util'
 import { registerEnvironmentContext } from './environment-context.mjs'
 import { detectPowerShellRuntime, powerShellCommand } from './powershell-runtime.mjs'
 import { gitbashCommand, gitbashWorkdirPlan, pwshWorkdirPlan, resolveWorkdir } from './shell-workdir.mjs'
+import { SHELL_ROUTING_SUMMARY, registerShellPolicy } from './shell-policy.mjs'
 import { arch, cpus, homedir, hostname, release, tmpdir, totalmem, userInfo, version as osVersion } from 'node:os'
 
 const execFileAsync = promisify(execFile)
@@ -424,6 +425,7 @@ export function buildBrief(snapshot, cwd, wslVariant = false) {
     : world.label
   lines.push(`cwd: ${world.raw} (${cwdLabel})`)
   lines.push(`shells: ${shellSummary(snapshot, world, wslVariant)}`)
+  lines.push(`shell routing: ${SHELL_ROUTING_SUMMARY}`)
   lines.push(`files: ${fileSummary(snapshot, wslVariant)}`)
   lines.push('paths:')
   for (const rule of pathRules(snapshot, world)) lines.push(`  ${rule}`)
@@ -565,6 +567,10 @@ export function apply(ctx, config) {
     ),
   })
 
+  // 独立、靠后的具体 shell 路由段：明确覆盖宿主的泛化 shell 建议，但不覆盖
+  // 权限/审批/沙箱/文件规则。文案与 [ENV] 简报共用 shell-policy.mjs。
+  registerShellPolicy(ctx)
+
   // ── 2) env_probe 工具：复查环境 + 实测两侧 shell（全异步，不阻塞）──────
   ctx.effect(() => {
     ctx.tools.register({
@@ -609,12 +615,12 @@ export function apply(ctx, config) {
       name: 'gitbash',
       description: [
         `Run commands in Git Bash on the Windows mother system. Backend: ${label}.`,
-        'FIRST-CHOICE shell for EVERY environment: prefer it for Windows-side work (C:\\…), for WSL/Linux files via their //wsl.localhost/<distro>/… UNC form, and for general shell/Git/script tasks.',
-        'Fall back to pwsh (PowerShell-only features or gitbash missing) or bash (Linux-only tooling, package managers, /proc, or gitbash missing) only when needed.',
+        SHELL_ROUTING_SUMMARY,
+        'This is the preferred general Windows execution entry when available; do not use it to bypass an approval or sandbox denial.',
         'Use it to operate the Windows host directly (files, Git, shell scripts, mingw toolchain, etc.).',
         'Each call runs a fresh bash -lc shell (state does NOT persist across calls).',
         'Windows paths are native here (C:\\…); inside the shell they appear as /c/… (MSYS2 style, NOT /mnt/c); WSL files are reachable as //wsl.localhost/<distro>/….',
-        'Commands run in a fresh process; non-zero exit codes are reported as errors.',
+        'Commands run in a fresh process; non-zero exit codes are reported as errors and never trigger a different-shell retry.',
       ].join('\n'),
       parameters: toJsonSchema({
         command: { type: 'string', required: true, description: 'The bash command to execute (bash -lc string domain, Windows world).' },
@@ -681,11 +687,13 @@ export function apply(ctx, config) {
     const description = snap.platform === 'win32'
       ? `Run a PowerShell command on the Windows mother system. Backend: ${label}. ` +
         (snap.gitbash !== undefined
-          ? 'This is the FALLBACK shell: prefer the `gitbash` tool for ALL shell work; use pwsh only when Git Bash is unavailable or PowerShell-specific features (registry, services, WMI, etc.) are needed. '
-          : 'This is the default shell for Windows-side file operations; prefer it over bash for Windows paths (C:\\…). ') +
+          ? 'For general Windows execution prefer the `gitbash` tool; use this bound pwsh tool for PowerShell-specific commands, .ps1 scripts, or Windows UI automation, and as the Windows fallback when Git Bash is unavailable. '
+          : 'Git Bash was not detected, so this bound pwsh tool is the Windows fallback for general Windows execution, and the tool for PowerShell-specific commands, .ps1 scripts, or Windows UI automation. ') +
+        SHELL_ROUTING_SUMMARY + ' ' +
         'Use it to operate the Windows host directly (registry, services, files, Git, etc.). ' +
         'Commands run in a fresh process; non-zero exit codes are reported as errors.'
       : `Run a PowerShell command. Backend: ${label}. ` +
+        SHELL_ROUTING_SUMMARY + ' ' +
         'Use it to reach the Windows mother system when running inside WSL (powershell.exe interop) ' +
         'or to drive PowerShell on native Linux. Commands run in a fresh process; non-zero exit codes are reported as errors.'
     ctx.tools.register({

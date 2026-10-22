@@ -1,8 +1,15 @@
-# DS女仆长模式 · v3.0.0
+# DS女仆长模式 · v3.1.0
 
 DSH 的个人工程预设：**系统提示词要求中文思考、全能工具面但常驻核心按需解锁、可靠环境简报、实时请求模型 ID、安全工作目录、PowerShell 7 优先绑定**，保留温柔严谨的蓝发蓝瞳鲸鱼娘女仆长风格。
 
 整个目录是一个 DSH bundle；自定义模块只使用 Node 内置模块及包内导入，不依赖 `dsh-wsl-workspace`。组合本身仍依赖 DSH 官方插件与服务，不是脱离 DSH 的独立运行时。
+
+## v3.1.0 重点：路由、交付、工具组与单一 shell 规则
+
+- **路由看最近真实用户请求**：`sessionMode` 不再取第一条 `user/message`。它逆序找最近一条真实用户实质请求，忽略 plugin/plugin:*/agent-message/model-selection/user-approval 等自动来源，剥离 openviking/runtime 等包装块；`Current runtime context` 按整个多段快照剥离，不会只删标题段后让 `Current working directory` / `You are…` 覆盖真实任务，同一消息包装外的真实请求保留。最近的「继续/好的/可以」等简短应承沿用上一实质任务。新增 **consult** 带：明确问句（「如何修复这个错误？」「Why create this file?」）即使含 fix/build 等动词也先回答；解释、评审、分析、只读、先给计划不催写代码；明确实施意图仍走 react/spec（例如「按计划实现修复」）。**范围限制不是拒绝实施**：「只做这个错误的修复」「修复这个错误，不要改其他文件」仍走 spec。没有可靠意图时返回中性 `weak`。英文动词按单词边界匹配，`address`/`prefix`/`somehow` 不会误命中 add/fix/how；代码块/引用块不参与判断。
+- **`delivery_check` 收紧为基础交付证据检查**：相对路径只按 `exec.agent.session.header.cwd` 解析；无会话 cwd、相对 cwd、Windows drive-relative（`C:foo`）、root-relative（`\foo`、`/foo`）及外部平台绝对路径都直接 FAIL，不退到 `process.cwd()`。文件必须是普通、可读、非空文件；未知扩展也验证可读性。文本严格 UTF-8 且超过校验上限直接 FAIL；PNG/JPEG/GIF/WebP 查签名与基本截断，PDF 查头尾；docx/xlsx/pptx 只读 ZIP central directory，校验 `[Content_Types].xml`、`_rels/.rels` 与主文件，拒绝条目 data 覆盖 central directory、本地范围重叠、未消费完的声明区域，不解压、不执行。证据 item 必须有合法 kind、非空 label/result；file/page/image/run/test 需本地普通可读非空 target 并记录 SHA256。**图片/PDF/docx/pptx 页面交付**至少需要一项 accepted 的 `page`/`image` evidence 且 `reviewed:true`；视觉 target 必须是可识别图片并通过签名检查，`reviewed:true` 指向文本日志/HTML 不能冒充截图；xlsx 维持数据/测试证据即可。格式读取异常统一转成 FAIL，不抛出工具异常。所有 PASS 只代表基础文件与证据检查。
+- **`dev_tool_search` 支持固定工具组**：新增可选 `groups`，保留 `query`/`toolNames`。固定组为 `office` / `repo-files` / `sessions` / `team` / `terminal` / `memory-write`，只从 `ctx.tools.schemas(exec.agent)` 的实际作用域目录展开，仅改变可见性、不授予权限。成功解锁的实际 accepted 精确名写入官方 `tool/result` 的 tool-private `meta`，冷启动/压缩后按精确名恢复。恢复只信**与该会话一条 `dev_tool_search` callId 配对成功**的 result：其它工具的文本/meta、伪造 `gate` 名、无 result 的中断调用都不会解锁；仅 `tool/call` 的旧日志无法区分成功与中断，保守保持锁定，需要重新调用解锁。v3.0 固定成功文案仍需配对 call 才恢复。没有 `agent.session` 时执行返回 `accepted: []` 并明确说明未解锁。搜索说明为「任一关键词命中即评分」。
+- **shell 规则单一来源**：`shell-policy.mjs` 是唯一文案源，persona 只引用它、不再复制表。Windows 通用执行优先 gitbash；**Git Bash 不可用时由已验证绑定的 pwsh 处理 Windows 通用任务**，pwsh 同时负责 PowerShell 专属命令、`.ps1`、Windows UI；**bash 只用于 Linux-only 工作，绝不作为 Windows 回退**；原生 Linux/macOS/Android 用 native shell；ops_bash 只在适用环境能力明确时作为执行入口。目录非法停止，命令失败不换旧 PowerShell/不同 shell，权限拒绝不可越过。该 section 使用 order 10300，位于引擎内置的 `WEB_SURFACE`(10100) 与 `DEPLOYMENT_PERSONA_SUFFIX`(10200) 之后；这一点由真实 `SystemPrompt` 组装测试验证，而不只是 mock 的 order 断言。
 
 ## v3.0.0 重点：全能 ≠ 全量常驻
 
@@ -15,7 +22,7 @@ v3 的做法：
 
 - **常驻核心 29 个**（`tool-gate.mjs` 的 `DEFAULT_RESIDENT_TOOLS`）：shell 三通道、文件读写与图像、搜索、任务/交付、技能、记忆读取、交互与目标、后台作业、子代理协作；
 - **其余全部按需解锁**：`dev_tool_search` 支持关键词搜索全量目录与按精确名解锁，解锁从下一次请求起生效；
-- **解锁持久可恢复**：解锁名写入 `tool/call` 会话事件，重启/恢复后冷扫描重建；
+- **解锁持久可恢复**：解锁名写入会话事件，重启/恢复后冷扫描重建（v3.0 固定成功文案需与 `tool/call` 配对；v3.1 起用 `tool/result.meta.accepted` 并校验 callId 配对）。只有 call、没有 result 的旧日志无法证明成功，保守保持锁定，需要重新调用 `dev_tool_search`；
 - **子代理默认不裁剪**（`includeSubagents: false`），避免被派活的子代理缺工具卡死；
 - **一键回退**：`mode: full` 回到全量首轮可见，不用卸载插件；
 - **安全网**：门控工具缺失或过滤器异常时自动降级全量，绝不锁死会话。
@@ -54,7 +61,7 @@ v3 的做法：
 
 ### PowerShell 7 优先、没有 7 才回退默认
 
-- `gitbash` 仍是全局第一优先。PowerShell 专属操作、`.ps1` 和 Windows UI 自动化使用 `pwsh` 工具。
+- `gitbash` 仍是 Windows 通用执行的第一优先。PowerShell 专属操作、`.ps1` 和 Windows UI 自动化使用绑定的 `pwsh` 工具；**Git Bash 不可用时，绑定的 pwsh 就是 Windows 通用回退**（不是 WSL bash）。
 - 枚举常见安装位置和 PATH，实际校验版本、edition、进程可执行文件路径，**将工具 argv 固定到验证后的绝对路径**，不只依赖提示词或 PATH。
 - 优先稳定 PowerShell 7+，同类选择较高版本，再考虑 preview。
 - **没有有效的 7 时回退系统默认 PowerShell**（Windows 包括 5.1），简报和工具描述明确显示实际版本、路径及 fallback 状态。
@@ -78,7 +85,7 @@ v3 的做法：
  dsh plugin --profile web add "file:/absolute/path/to/big-fat-whale-maid-adaptive"
 
 # 或安装 GitHub Release 下载的 tgz
- dsh plugin --profile web add "file:/absolute/path/to/dsh-preset-big-fat-whale-maid-adaptive-3.0.0.tgz"
+ dsh plugin --profile web add "file:/absolute/path/to/dsh-preset-big-fat-whale-maid-adaptive-3.1.0.tgz"
 ```
 
 - 使用实际宿主对应的官方插件管理 CLI。Electron 的 `desktop` 档须用桌面版自带 CLI 管理。
@@ -93,20 +100,21 @@ v3 的做法：
 
 ```bash
 npm test
-# 可选，接入已安装 DSH 的真实 prompt/model-selection 服务
+# 接入已安装 DSH 的真实 prompt/model-selection/tools registry 服务
 DSH_TEST_ANCHOR=/path/to/dsh npm test
-# 可选，只验证这一份本机 PowerShell 7，不执行 WSL 或 5.1
-PWSH_RUNTIME_REAL_PATH='C:\Program Files\PowerShell\7\pwsh.exe' npm test
+# 同时验证这一份本机 PowerShell 7（不执行 WSL 或 5.1）
+DSH_TEST_ANCHOR='C:/Users/admin/AppData/Roaming/npm/node_modules/@deepseek-ai/dsh' \
+PWSH_RUNTIME_REAL_PATH='C:/Program Files/PowerShell/7/pwsh.exe' npm test
 ```
 
-测试覆盖首轮异步探测、每轮/重启/压缩环境上下文、切模、字面大括号路径、旧指令提示识别、shell 转义与失败阻断、PowerShell 7 选择及默认后端回退。普通测试对 PowerShell 探测使用 mock；真实 DSH/PowerShell 检查按需启用。Git Bash 可用时另做真实目录攻击字符串验证。
+在本 Windows 工作树中，同时设置上述两个变量后共 **122 项测试全部执行、0 skip、0 fail**。覆盖首轮异步探测、每轮/重启/压缩环境上下文、切模、字面大括号路径、旧指令提示识别、shell 转义与失败阻断、PowerShell 7 选择及默认后端回退；v3.1 另覆盖明确问句/范围限制路由、多段 runtime 快照、交付文件格式/原生 cwd/视觉证据/ZIP 伪造、工具组作用域与 callId 配对恢复、空 `accepted` meta 的权威性、真实 DSH Tools 注册与 `tool-result.meta` 持久化、真实 `SystemPrompt` 的 shell section 顺序。没有真实 DSH 锚点时相关集成用例会显式 skip，不会伪装成已通过。
 
 ## 能力与边界
 
-- 所有**已注册且可用**工具都在目录里，但首轮只常驻高频核心；其余用 `dev_tool_search` 解锁。能力齐全不代表所有提供者均已安装、认证；技能按需 `skill_search` / `skill_load`。
-- 保留原有任务分类、子代理、workflow、goal、计划模式、交付检查工具。本次没有重写任务分类器或 `delivery_check` 校验器。
-- `delivery_check` 是检查辅助与模型遵守的交付约定，不是不可绕过的安全门禁。
-- shell 路由建议不是 OS 沙箱；真实权限、审批、网络边界由宿主、当前账户和 DSH 底座决定。
+- 所有**已注册且可用**工具都在目录里，但首轮只常驻高频核心；其余用 `dev_tool_search` 的 `query` / `toolNames` / `groups` 解锁。能力齐全不代表所有提供者均已安装、认证；技能按需 `skill_search` / `skill_load`。
+- 保留任务分类、子代理、workflow、goal、计划模式与交付检查工具。v3.1 的路由与 `delivery_check` 行为已更新；mode overlay 只是风格提示，不授予权限，用户请求、计划模式和审批规则优先。
+- `delivery_check` 是检查辅助与模型遵守的交付约定，不是不可绕过的安全门禁；PASS 只代表基础文件与证据检查，不代表语义正确、视觉质量、完整格式合规或外部事实真实。page/image 的 `reviewed` 只是人工声明，检查器不会真的“看”图；但它会拒绝文本日志/HTML/未知扩展充当视觉 target，并要求图片/PDF/docx/pptx 页面交付至少一项带签名校验的 reviewed 视觉证据。xlsx 只需数据/测试证据。
+- shell 路由建议不是 OS 沙箱；真实权限、审批、网络边界由宿主、当前账户和 DSH 底座决定。目录非法或 `cd` 失败必须停止，不能因命令失败换 shell。
 - 旧 `agent.cordis.yml`、`preset.yml` 和 bootstrap/gate 源码仅备查，不参与现行组合。改人设、展示名和工具行请编辑 `cordis.patch.yml`。
 
 ## 来源与致谢
@@ -120,6 +128,7 @@ v3 的按需解锁是自研门控（`tool-gate.mjs`：常驻核心 + `dev_tool_s
 
 ## 版本历史
 
+- **v3.1.0**：路由改取最近真实用户请求并新增 consult 带（明确问句优先、范围限制仍实施）；`delivery_check` 收紧原生 cwd/可读性/视觉证据/ZIP 边界检查并抽为 `delivery-check.mjs`；`dev_tool_search` 新增固定工具组与 callId 配对恢复；新增 `shell-policy.mjs` 统一 shell 路由并追加 order 10300 的靠后系统段；真实 DSH Tools/SystemPrompt 集成测试。详见 [发行说明](./releases/v3.1.0.md)。
 - **v3.0.0**：全能工具面改为「常驻核心 + 按需解锁」（`tool-gate.mjs` / `dev_tool_search`），解锁持久化、子代理不裁剪、`mode: full` 可回退；`dev_router_status` 报告真实门控状态。详见 [发行说明](./releases/v3.0.0.md)。
 - **v2.3.0**：系统提示词（persona 前缀）要求以中文进行思考，旧备查人设同步；其余行为与 v2.2.0 一致。详见 [发行说明](./releases/v2.3.0.md)。
 - **v2.2.0**：可靠系统环境段、实时模型路由 ID、PowerShell 版本验证绑定与默认回退、安全工作目录、精简人设、自包含回归测试。详见 [发行说明](./releases/v2.2.0.md)。

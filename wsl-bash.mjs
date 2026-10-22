@@ -21,6 +21,7 @@
  */
 
 import { execFileSync } from 'node:child_process'
+import { SHELL_ROUTING_SUMMARY } from './shell-policy.mjs'
 
 /** Cordis 插件名（loader 诊断用）。 */
 export const name = 'whale-maid-wsl-bash'
@@ -215,7 +216,7 @@ export function apply(ctx, config) {
         '* You do have access to a mirror of common linux and python packages via apt and pip.',
         '* Each call runs a fresh bash -lc shell (state does NOT persist across calls).',
         '* Linux paths are native here; Windows files are reachable as /mnt/<drive> (e.g. /mnt/c/Users/...).',
-        '* ROUTING: prefer the `gitbash` tool FIRST for every shell task it can handle (including WSL files via //wsl.localhost/… UNC); this bash tool is for WSL/Linux-side work that gitbash cannot do (package managers, Linux-only tooling, /proc, or when gitbash is unavailable). Use /mnt/<drive> only when the operation genuinely needs Linux-only tools.',
+        `* ROUTING: ${SHELL_ROUTING_SUMMARY} This bash tool is for WSL/Linux-only work (package managers, Linux-only tooling, /proc); it is never the Windows fallback when Git Bash is unavailable — that fallback is the verified bound pwsh tool. Use /mnt/<drive> only when the operation genuinely needs Linux-only tools.`,
         "* To inspect a particular line range of a file, e.g. lines 10-25, try 'sed -n 10,25p /path/to/the/file'.",
         '* Please avoid commands that may produce a very large amount of output.',
         "* To run long-lived work, start it in the background inside bash, e.g. 'sleep 10 &'.",
