@@ -1,8 +1,30 @@
-# DS女仆长模式 · v3.1.0
+# DS女仆长模式 · v3.2.0
 
-DSH 的个人工程预设：**系统提示词要求中文思考、全能工具面但常驻核心按需解锁、可靠环境简报、实时请求模型 ID、安全工作目录、PowerShell 7 优先绑定**，保留温柔严谨的蓝发蓝瞳鲸鱼娘女仆长风格。
+DSH 的个人工程预设：**思考强度三档联动工具面（low 原生 / high PTC / max PTC+全量）、系统提示词要求中文思考并主动汇报进度与风险、常驻核心按需解锁、可靠环境简报、实时请求模型 ID、安全工作目录、PowerShell 7 优先绑定**，保留温柔严谨的蓝发蓝瞳鲸鱼娘女仆长风格。
 
 整个目录是一个 DSH bundle；自定义模块只使用 Node 内置模块及包内导入，不依赖 `dsh-wsl-workspace`。组合本身仍依赖 DSH 官方插件与服务，不是脱离 DSH 的独立运行时。
+
+## v3.2.0 重点：思考强度三档驱动工具面
+
+预设现在把会话的**推理强度**当成第一等输入。档位归一严格照 [DeepSeek 思考模式文档](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode/) 的映射表：
+
+| 请求传入 effort | 实际推理强度 | 本预设档位 |
+|---|---|---|
+| `minimal` / `low` / `off` | low | **低档** |
+| `medium` / `high` / `xhigh` | high | **高档** |
+| `max` / `ultra` | max | **满档** |
+
+| 维度 | 低档 | 高档 | 满档 |
+|---|---|---|---|
+| 工具呈现 | `native`（与 v3.1.0 完全一致） | `ptc`：只有 `run_code` 可直调，其余工具从程序内调用 | `ptc` |
+| 解锁策略 | `progressive`：常驻核心 + `dev_tool_search` | `progressive` | `full`：已注册工具全量可见 |
+| 预算提示 | 无 | PTC 用法说明 | PTC 说明 + 「用量 unlimited、放开花」原文提示 |
+
+- **按会话声明，互不干扰**：呈现用 `ctx.tools.presentAs()` 声明在**该会话的 agent scope**（cordis 的 traceable 代理会把 `this.ctx` 换成调用者 ctx），所以两个会话可以一个跑 low、一个跑 max；解锁模式也支持会话级覆盖。
+- **改档在下一轮组装时生效**：对齐挂在 `system-prompt/assemble`（该事件能拿到 `agent` 与 `agent.ctx`；`agent/pre-step` 的 payload 里没有 agent，挂不上），对齐在 `next()` 之前，PTC 说明段当轮即就绪；轮内不再改动 schema，避免同一轮工具面抖动；同一 scope 重复声明会抛 conflict，因此换档先 dispose 再声明；`high → max` 只换解锁策略，不重新声明呈现。
+- **失败一律 fail-open**：PTC 运行时缺失、scope 不合法、声明抛错，都只回落 `native` 并只告警一次，绝不阻断会话。低档不做任何呈现声明，行为与 v3.1.0 逐字一致。
+- **手动锁定**：设环境变量 `DSH_MAID_EFFORT=low|high|max`（优先级最高，便于测试与临时压制）。`dev_router_status` 的 `effort=` 行会报告当前档位、呈现、解锁与强度来源。
+- **全局汇报纪律**：persona 前缀新增两条（任何档位都生效）——主动汇报进度（几步一次说清在做什么、改了什么、还剩什么），遇到检查失败/路径错误/权限拒绝/计划不再成立时当轮立即汇报，不要闷头重试。
 
 ## v3.1.0 重点：路由、交付、工具组与单一 shell 规则
 
@@ -113,6 +135,7 @@ PWSH_RUNTIME_REAL_PATH='C:/Program Files/PowerShell/7/pwsh.exe' npm test
 
 - 所有**已注册且可用**工具都在目录里，但首轮只常驻高频核心；其余用 `dev_tool_search` 的 `query` / `toolNames` / `groups` 解锁。能力齐全不代表所有提供者均已安装、认证；技能按需 `skill_search` / `skill_load`。
 - 保留任务分类、子代理、workflow、goal、计划模式与交付检查工具。v3.1 的路由与 `delivery_check` 行为已更新；mode overlay 只是风格提示，不授予权限，用户请求、计划模式和审批规则优先。
+- 档位驱动的呈现只改变「模型看到哪种工具形态」，不改变宿主权限：PTC 程序内的每次工具调用仍走同一套审批、沙箱与作用域可见性；满档的全量可见也只是「已注册且当前作用域可见」的工具，不会绕过任何安装或授权条件。
 - `delivery_check` 是检查辅助与模型遵守的交付约定，不是不可绕过的安全门禁；PASS 只代表基础文件与证据检查，不代表语义正确、视觉质量、完整格式合规或外部事实真实。page/image 的 `reviewed` 只是人工声明，检查器不会真的“看”图；但它会拒绝文本日志/HTML/未知扩展充当视觉 target，并要求图片/PDF/docx/pptx 页面交付至少一项带签名校验的 reviewed 视觉证据。xlsx 只需数据/测试证据。
 - shell 路由建议不是 OS 沙箱；真实权限、审批、网络边界由宿主、当前账户和 DSH 底座决定。目录非法或 `cd` 失败必须停止，不能因命令失败换 shell。
 - 旧 `agent.cordis.yml`、`preset.yml` 和 bootstrap/gate 源码仅备查，不参与现行组合。改人设、展示名和工具行请编辑 `cordis.patch.yml`。
@@ -128,6 +151,7 @@ v3 的按需解锁是自研门控（`tool-gate.mjs`：常驻核心 + `dev_tool_s
 
 ## 版本历史
 
+- **v3.2.0**：思考强度三档（low/high/max）驱动工具呈现、解锁策略与预算提示；`tool-gate` 支持运行期与会话级切档；`effort-policy.mjs` 新增档位归一、agent scope 呈现声明与 fail-open 回落；persona 增加「主动汇报进度 / 遇阻立即报告」全局纪律；`dev_router_status` 报告 effort 状态。详见 [发行说明](./releases/v3.2.0.md)。
 - **v3.1.0**：路由改取最近真实用户请求并新增 consult 带（明确问句优先、范围限制仍实施）；`delivery_check` 收紧原生 cwd/可读性/视觉证据/ZIP 边界检查并抽为 `delivery-check.mjs`；`dev_tool_search` 新增固定工具组与 callId 配对恢复；新增 `shell-policy.mjs` 统一 shell 路由并追加 order 10300 的靠后系统段；真实 DSH Tools/SystemPrompt 集成测试。详见 [发行说明](./releases/v3.1.0.md)。
 - **v3.0.0**：全能工具面改为「常驻核心 + 按需解锁」（`tool-gate.mjs` / `dev_tool_search`），解锁持久化、子代理不裁剪、`mode: full` 可回退；`dev_router_status` 报告真实门控状态。详见 [发行说明](./releases/v3.0.0.md)。
 - **v2.3.0**：系统提示词（persona 前缀）要求以中文进行思考，旧备查人设同步；其余行为与 v2.2.0 一致。详见 [发行说明](./releases/v2.3.0.md)。

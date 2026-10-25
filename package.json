@@ -1,8 +1,8 @@
 {
   "name": "dsh-preset-big-fat-whale-maid-adaptive",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "private": true,
-  "description": "DS女仆长模式 — Chinese-reasoning system prompt, cached environment + live model identity, safe workdirs, verified PowerShell 7 binding, resident tool core with on-demand search/groups unlock (full-catalog fallback).",
+  "description": "DS女仆长模式 — reasoning-effort bands drive the tool face (low: native + resident core with on-demand unlock; high: PTC programmatic tools with on-demand unlock; max: PTC + full catalog + unlimited-budget prompt), Chinese-reasoning system prompt with progress/problem reporting rules, cached environment + live model identity, safe workdirs, verified PowerShell 7 binding.",
   "type": "module",
   "license": "MIT",
   "exports": {
@@ -12,6 +12,7 @@
     "./router-progressive.mjs": "./router-progressive.mjs",
     "./delivery-check.mjs": "./delivery-check.mjs",
     "./tool-gate.mjs": "./tool-gate.mjs",
+    "./effort-policy.mjs": "./effort-policy.mjs",
     "./shell-policy.mjs": "./shell-policy.mjs",
     "./compaction-epoch.mjs": "./compaction-epoch.mjs",
     "./instruction-hint.mjs": "./instruction-hint.mjs",

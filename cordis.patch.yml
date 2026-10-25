@@ -37,7 +37,7 @@
       config:
         id: big-fat-whale-maid-adaptive
         name: 'DS女仆长模式'
-        description: '全能工具面 + 常驻核心按需解锁（dev_tool_search 支持 search/toolNames/groups，可一键回退全量）；系统提示词要求以中文进行思考；每轮保留缓存环境简报与当前请求模型 ID；最近真实用户请求路由（react/spec/consult/weak）；基础交付文件与证据检查；Git Bash 优先、PowerShell 7 优先验证绑定、无 7 才回退默认 PowerShell；安全工作目录、统一 shell 路由与精简鲸鱼娘女仆长人设。'
+        description: '思考强度三档联动工具面：low 保持 native 呈现 + 常驻核心按需解锁（dev_tool_search 支持 search/toolNames/groups），high 切 PTC 程序化调用并保留按需解锁，max 再全量开放并注入不限量预算提示（失败自动回落 native）；系统提示词要求以中文进行思考、主动汇报进度、遇阻立即报告；每轮保留缓存环境简报与当前请求模型/档位；最近真实用户请求路由（react/spec/consult/weak）；基础交付文件与证据检查；Git Bash 优先、PowerShell 7 优先验证绑定、无 7 才回退默认 PowerShell；安全工作目录、统一 shell 路由与精简鲸鱼娘女仆长人设。'
         order: 26
         plugins:
           # ── task-mode routing + delivery gate ────────────────────────────
@@ -66,6 +66,8 @@
                 - Shell routing: follow the dedicated "Shell routing (preset-specific, applied after generic tool guidance)" system section generated from shell-policy.mjs. It is the single source of truth for gitbash/pwsh/bash/WSL selection, including the Windows fallback when Git Bash is unavailable; do not restate or override it from this persona, and never treat it as a permission grant.
                 - Use absolute working directories in the correct filesystem world. Unsupported paths or failed directory changes must stop execution, never justify running in another directory.
                 - Inspect before fixing; implement and verify when asked to build. Check tool availability, keep changes within scope, and report verification honestly. Before internet downloads, check connectivity and use an available authorized proxy if needed.
+                - Report progress actively (global rule): every few steps say what you are doing, what already changed, and what is still open — especially through long tool sequences. Never let the owner guess where the work stands, and never go silent until the final answer.
+                - Report problems immediately (global rule): the moment a check fails, a path is wrong, a tool is denied, a plan stops holding, or a step needs approval you cannot get, say it in the same turn with the concrete symptom and what you will try next, instead of retrying silently. 遇到问题立刻汇报，不要闷头重试。
               # complete:true discards all other sections AND post-assembly router overlays.
               # Keep the persona scoped, but retain our environment/model system section.
               complete: false
@@ -321,6 +323,21 @@
               includeSubagents: false
               # residentTools 省略即用默认核心名单；要覆盖时写完整数组。
               # maxSearchResults: 25
+
+          # ── reasoning-effort bands (v3.2.0) ─────────────────────────────
+          # 思考强度 → 工具面，按 DeepSeek 官方映射归一：
+          #   minimal/low/off     → low   ：native 呈现 + progressive（与 v3.1.0 一致）
+          #   medium/high/xhigh   → high  ：PTC 呈现（只有 run_code 直调）+ progressive
+          #   max/ultra           → max   ：PTC 呈现 + 全量工具 + 不限量预算提示
+          # 呈现按 agent scope 声明（一个会话一份，互不干扰）；中途改档下一轮生效；
+          # PTC 运行时缺失或声明失败时自动回落 native，绝不阻断会话。
+          - id: effort-policy
+            name: dsh-preset-big-fat-whale-maid-adaptive/effort-policy.mjs
+            config:
+              defaultBand: auto
+              # 子代理继承父作用域的呈现，不再单独声明，避免同链重复切换。
+              includeSubagents: false
+              budgetPrompt: true
 
           # dsh 0.1.6+ added this row; it post-dates the legacy composition.
           - id: present

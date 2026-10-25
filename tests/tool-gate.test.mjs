@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   apply, describeGate, GATE_TOOL, DEFAULT_RESIDENT_TOOLS, TOOL_GROUPS,
+  setGateMode, currentGateMode,
 } from '../tool-gate.mjs'
 
 /** 构造最小 ctx + 一份工具目录，行为对齐 Cordis 服务形状。 */
@@ -88,11 +89,42 @@ test('resume rebuilds unlocks from a successful paired session log', async () =>
   assert.ok(visible.includes('office_write'), 'durable unlock survives a cold session scan')
 })
 
-test('mode: full exposes the whole catalog without registration side effects', async () => {
+test('mode: full exposes the whole catalog without trimming', async () => {
   const { ctx, listeners } = createHarness(['gitbash', 'office_open', GATE_TOOL])
   apply(ctx, { mode: 'full' })
-  assert.equal(listeners.get('system-prompt/assemble'), undefined, 'full mode installs no assemble filter')
   assert.match(describeGate(undefined), /full/)
+  // v3.2.0: the assemble listener is always registered so the mode can switch at
+  // runtime; in full mode it must pass the catalog through untouched.
+  const result = await assemble(listeners, { session: makeSession('gate-full') }, ['gitbash', 'office_open', GATE_TOOL])
+  assert.deepEqual(result.tools.map((tool) => tool.name).sort(), ['gitbash', 'office_open', GATE_TOOL].sort())
+})
+
+test('setGateMode switches an already mounted gate at runtime', async () => {
+  const { ctx, listeners } = createHarness(['gitbash', 'office_open', GATE_TOOL])
+  apply(ctx, { mode: 'progressive' })
+  const agent = { session: makeSession('gate-runtime') }
+  const catalog = ['gitbash', 'office_open', GATE_TOOL]
+
+  let visible = (await assemble(listeners, agent, catalog)).tools.map((tool) => tool.name)
+  assert.ok(!visible.includes('office_open'), 'progressive trims locked tools')
+
+  assert.equal(currentGateMode(), 'progressive')
+  assert.equal(setGateMode('full'), true, 'a real switch reports true')
+  assert.equal(currentGateMode(), 'full')
+  visible = (await assemble(listeners, agent, catalog)).tools.map((tool) => tool.name)
+  assert.ok(visible.includes('office_open'), 'full mode exposes everything on the next assembly')
+
+  assert.equal(setGateMode('full'), false, 'repeating the same mode is idempotent')
+  assert.equal(setGateMode('progressive'), true)
+  visible = (await assemble(listeners, agent, catalog)).tools.map((tool) => tool.name)
+  assert.ok(!visible.includes('office_open'), 'switching back trims again')
+})
+
+test('setGateMode rejects unknown modes and keeps the current one', () => {
+  const { ctx } = createHarness(['gitbash', GATE_TOOL])
+  apply(ctx, { mode: 'progressive' })
+  assert.throws(() => setGateMode('half'), TypeError)
+  assert.equal(currentGateMode(), 'progressive', 'a rejected mode leaves state untouched')
 })
 
 test('missing gate tool degrades to the full catalog instead of bricking the session', async () => {
@@ -489,4 +521,29 @@ test('no-argument overview lists fixed groups and purposes; search uses any-keyw
   assert.match(search.text, /terminal_open/)
   assert.match(gate.description, /任一关键词命中/)
   assert.doesNotMatch(gate.description, /同时命中全部关键词/)
+})
+
+test('per-session overrides let two sessions run different modes at once', async () => {
+  const { ctx, listeners } = createHarness(['gitbash', 'office_open', GATE_TOOL])
+  apply(ctx, { mode: 'progressive' })
+  const lowSession = makeSession('gate-low')
+  const maxSession = makeSession('gate-max')
+  const catalog = ['gitbash', 'office_open', GATE_TOOL]
+
+  // full only for the max-band session; the other one must keep trimming.
+  assert.equal(setGateMode('full', { session: maxSession }), true)
+  assert.equal(currentGateMode(maxSession), 'full')
+  assert.equal(currentGateMode(lowSession), 'progressive', 'the global default is untouched')
+  assert.equal(currentGateMode(), 'progressive')
+
+  const maxVisible = (await assemble(listeners, { session: maxSession }, catalog)).tools.map((tool) => tool.name)
+  assert.ok(maxVisible.includes('office_open'), 'the max session sees everything')
+
+  const lowVisible = (await assemble(listeners, { session: lowSession }, catalog)).tools.map((tool) => tool.name)
+  assert.ok(!lowVisible.includes('office_open'), 'the low session stays gated')
+
+  // Dropping the override back to progressive restores trimming for that session only.
+  assert.equal(setGateMode('progressive', { session: maxSession }), true)
+  const backVisible = (await assemble(listeners, { session: maxSession }, catalog)).tools.map((tool) => tool.name)
+  assert.ok(!backVisible.includes('office_open'))
 })

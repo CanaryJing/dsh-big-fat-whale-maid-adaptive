@@ -11,7 +11,10 @@
  *      下一次请求起可见（恢复会话同样有效）。恢复只信与本会话一条
  *      `dev_tool_search` callId 配对成功的 result；没有 result 的中断调用
  *      保持锁定，需要重新解锁；
- *   3. `mode: full` 一键回到旧的「全量首轮可见」，不卸载本插件即可回退。
+ *   3. `mode: full` 一键回到旧的「全量首轮可见」，不卸载本插件即可回退；
+ *   4. v3.2.0 起支持**运行期**切档：`setGateMode()` 之后下一轮组装即按新模式
+ *      裁剪（监听器常驻，模式在组装时读取），供 effort-policy 按思考强度
+ *      联动 progressive / full，不必重装插件。
  *
  * 为什么读会话事件而不是另存状态：会话日志本身就是持久且可恢复的，
  * 冷启动扫描一次即可重建解锁集合；压缩后仍在内存里，不需要额外存储服务。
@@ -164,10 +167,63 @@ const ALLOWED_KEYS = new Set(['mode', 'residentTools', 'includeSubagents', 'maxS
 const runtime = {
   mounted: false,
   mode: 'full',
+  /** 会话级模式覆盖（v3.2.0）：不同会话可以各跑 progressive / full。 */
+  modeBySession: new WeakMap(),
   resident: new Set(),
   state: new Map(),
   gateCalls: new Map(),
   includeSubagents: false,
+  /** 运行期切档后的通知钩子（apply 时挂上），通知失败不影响切档本身。 */
+  onModeChange: undefined,
+}
+
+/**
+ * 运行期切换门控模式（v3.2.0，供 effort-policy 按思考强度切档）。
+ *
+ * 只改可见性策略，不注册也不卸载任何工具：下一次 `system-prompt/assemble`
+ * 就按新模式裁剪，所以同一会话中途切档也能在下一轮生效。
+ *
+ * 传了 `options.session` 时只覆盖那一个会话（不同会话可以各跑各的档位）；
+ * 不传就是全局默认模式。
+ *
+ * @param {'progressive'|'full'} mode 目标模式
+ * @param {{ session?: object }} [options] 可选的会话级覆盖
+ * @returns {boolean} 是否真的发生了变化（同模式重复调用是幂等的）
+ * @throws {TypeError} 非法模式
+ */
+export function setGateMode(mode, options) {
+  if (mode !== 'progressive' && mode !== 'full') {
+    throw new TypeError(`${name}: mode must be "progressive" or "full"; got ${JSON.stringify(mode)}`)
+  }
+  const session = options?.session
+  let changed
+  if (session !== undefined && session !== null && typeof session === 'object') {
+    changed = runtime.modeBySession.get(session) !== mode
+    if (changed) runtime.modeBySession.set(session, mode)
+  } else {
+    changed = runtime.mode !== mode
+    runtime.mode = mode
+  }
+  if (changed && typeof runtime.onModeChange === 'function') {
+    try {
+      runtime.onModeChange(mode)
+    } catch {
+      // 通知失败不影响切档；下一轮组装仍按新 mode 生效。
+    }
+  }
+  return changed
+}
+
+/**
+ * 当前门控模式（插件未装载时返回最近一次设定值）。
+ * @param {object} [session] 传了就返回该会话的覆盖值，否则返回全局默认
+ */
+export function currentGateMode(session) {
+  if (session !== undefined && session !== null && typeof session === 'object') {
+    const override = runtime.modeBySession.get(session)
+    if (override !== undefined) return override
+  }
+  return runtime.mode
 }
 
 function booleanOption(value, field, fallback) {
@@ -343,8 +399,9 @@ function entryFor(session) {
  */
 export function describeGate(agent) {
   if (!runtime.mounted) return 'tool-gate not mounted (full catalog)'
-  if (runtime.mode === 'full') return 'full (all registered tools visible)'
   const session = agent?.session
+  const mode = currentGateMode(session)
+  if (mode === 'full') return 'full (all registered tools visible)'
   if (session === undefined) return `progressive (no session; resident=${runtime.resident.size})`
   const entry = runtime.state.get(session.id) ?? scanSession(session)
   return `progressive (resident=${runtime.resident.size}, unlocked=${entry.unlocked.size}, gate=${GATE_TOOL})`
@@ -418,6 +475,13 @@ export function apply(ctx, config) {
   runtime.mode = mode
   runtime.resident = resident
   runtime.includeSubagents = includeSubagents
+  runtime.onModeChange = () => {
+    try {
+      ctx.emit?.('tools/change')
+    } catch {
+      // 老版本 ctx 没有 emit：可见性只靠每轮组装，不影响正确性。
+    }
+  }
 
   let warned = false
   const warnOnce = (message) => {
@@ -458,31 +522,33 @@ export function apply(ctx, config) {
   })
 
   // ── 门控本体：只裁 tools，不动 sections ────────────────────────────────
-  if (mode === 'progressive') {
-    ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
-      const assembled = await next()
-      try {
-        const session = context?.agent?.session
-        if (session === undefined) return assembled
-        if (!includeSubagents && (session.header?.delegationDepth ?? 0) > 0) return assembled
-        const tools = Array.isArray(assembled?.tools) ? assembled.tools : undefined
-        if (tools === undefined) return assembled
-        // 安全网：门控工具没注册成功时保持全量，绝不把会话锁死。
-        if (!tools.some((tool) => tool?.name === GATE_TOOL)) {
-          warnOnce(`${name}: ${GATE_TOOL} is not in the assembled catalog — exposing every tool`)
-          return assembled
-        }
-        const entry = entryFor(session)
-        const keep = new Set(resident)
-        for (const toolName of entry.unlocked) keep.add(toolName)
-        return { ...assembled, tools: tools.filter((tool) => keep.has(tool?.name)) }
-      } catch (error) {
-        // 过滤器自身的 bug 不能砖化会话：降级为全量。
-        warnOnce(`${name}: gate filter failed, exposing every tool: ${String((error && error.message) || error)}`)
+  // v3.2.0：监听器始终注册，模式在每次组装时按会话读取（currentGateMode），
+  // 因此 effort-policy 可以在运行期（下一轮）切档，不必重装插件。
+  ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
+    const assembled = await next()
+    const gatedSession = context?.agent?.session
+    if (currentGateMode(gatedSession) !== 'progressive') return assembled
+    try {
+      const session = gatedSession
+      if (session === undefined) return assembled
+      if (!includeSubagents && (session.header?.delegationDepth ?? 0) > 0) return assembled
+      const tools = Array.isArray(assembled?.tools) ? assembled.tools : undefined
+      if (tools === undefined) return assembled
+      // 安全网：门控工具没注册成功时保持全量，绝不把会话锁死。
+      if (!tools.some((tool) => tool?.name === GATE_TOOL)) {
+        warnOnce(`${name}: ${GATE_TOOL} is not in the assembled catalog — exposing every tool`)
         return assembled
       }
-    })
-  }
+      const entry = entryFor(session)
+      const keep = new Set(resident)
+      for (const toolName of entry.unlocked) keep.add(toolName)
+      return { ...assembled, tools: tools.filter((tool) => keep.has(tool?.name)) }
+    } catch (error) {
+      // 过滤器自身的 bug 不能砖化会话：降级为全量。
+      warnOnce(`${name}: gate filter failed, exposing every tool: ${String((error && error.message) || error)}`)
+      return assembled
+    }
+  })
 
   // ── 模型侧入口：搜索 + 按精确名/组解锁 ──────────────────────────────
   ctx.tools.register({
@@ -570,13 +636,14 @@ export function apply(ctx, config) {
 
       if (requestedNames.length === 0 && requestedGroups.length === 0 && query.length === 0) {
         const unlocked = session !== undefined ? (runtime.state.get(session.id)?.unlocked.size ?? 0) : 0
-        lines.push(`门控模式：${mode}`)
+        const gateMode = currentGateMode(session)
+        lines.push(`门控模式：${gateMode}`)
         lines.push(`常驻：${runtime.resident.size} 个；已解锁：${unlocked} 个；目录总数：${schemas.length} 个`)
         lines.push('固定工具组（用 groups 解锁，只展开当前目录实际存在的名字）：')
         for (const [groupName, group] of Object.entries(TOOL_GROUPS)) {
           lines.push(`- ${groupName}：${group.description}`)
         }
-        if (mode === 'full') lines.push('当前为全量模式：所有工具本来就可见，本工具的解锁操作不会改变可见性。')
+        if (gateMode === 'full') lines.push('当前为全量模式：所有工具本来就可见，本工具的解锁操作不会改变可见性。')
       }
 
       return { text: lines.join('\n'), accepted: session === undefined ? [] : resolved.accepted }

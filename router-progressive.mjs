@@ -16,12 +16,13 @@ import {
   overlayFor, bandFor, sessionMode,
 } from './router-core.mjs'
 import { describeGate } from './tool-gate.mjs'
+import { describeEffort } from './effort-policy.mjs'
 import { runDeliveryCheck } from './delivery-check.mjs'
 
 export const name = 'whale-maid-router'
 export const inject = ['systemPrompt', 'tools']
 
-const ROUTER_VERSION = 'v3.1.0-maid-gated'
+const ROUTER_VERSION = 'v3.2.0-maid-effort-bands'
 
 /**
  * 把本包的简化参数 spec 转成 JSON Schema。嵌套 required 必须放在对象 schema
@@ -112,6 +113,7 @@ export function apply(ctx, config) {
           'router=whale-maid-router (' + ROUTER_VERSION + ')',
           'mode=' + String(mode) + ' (band=' + bandFor(mode) + ')',
           'toolCatalog=' + describeGate(exec?.agent),
+          'effort=' + describeEffort(exec?.agent),
         ].join('\n'),
       }
     },
