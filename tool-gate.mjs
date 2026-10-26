@@ -27,8 +27,8 @@
 /** Cordis 插件名（loader 诊断用）。 */
 export const name = 'tool-gate'
 
-/** 注册 dev_tool_search 需要 tools 服务。 */
-export const inject = ['tools']
+/** 工具注册依赖 tools；门控预对齐变量依赖 systemPrompt（Cordis 严格注入）。 */
+export const inject = ['tools', 'systemPrompt']
 
 /** 门控工具自身的名字，永不裁剪。 */
 export const GATE_TOOL = 'dev_tool_search'
