@@ -1,10 +1,12 @@
-# DS女仆长模式 · v3.2.0
+# DS女仆长模式 · v3.2.1
 
 DSH 的个人工程预设：**思考强度三档联动工具面（low 原生 / high PTC / max PTC+全量）、系统提示词要求中文思考并主动汇报进度与风险、常驻核心按需解锁、可靠环境简报、实时请求模型 ID、安全工作目录、PowerShell 7 优先绑定**，保留温柔严谨的蓝发蓝瞳鲸鱼娘女仆长风格。
 
 整个目录是一个 DSH bundle；自定义模块只使用 Node 内置模块及包内导入，不依赖 `dsh-wsl-workspace`。组合本身仍依赖 DSH 官方插件与服务，不是脱离 DSH 的独立运行时。
 
-## PTC 门控补修（2026-10-26）
+## v3.2.1：PTC 门控补修（2026-10-26）
+
+[下载 v3.2.1](https://github.com/CanaryJing/dsh-big-fat-whale-maid-adaptive/releases/tag/v3.2.1) · [发行说明](./releases/v3.2.1.md)
 
 - `run_code` 为固定入口，无须解锁，不交给能力过滤器裁剪。high 在 SDK 生成前应用 agent 级 restriction，同时限制继承工具的 SDK 与嵌套执行；max 全量但不移除外部限制。
 - `dev_tool_search` 只同步撤下本门控自己的 mask 读取实际目录，随后立即恢复；不会解除其它 scope restriction 或审批。申请解锁后本次程序先返回，下一次 `run_code` 才绑定新工具。
