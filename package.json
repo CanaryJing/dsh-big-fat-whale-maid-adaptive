@@ -11,6 +11,7 @@
     "./router-core.mjs": "./router-core.mjs",
     "./router-progressive.mjs": "./router-progressive.mjs",
     "./delivery-check.mjs": "./delivery-check.mjs",
+    "./deferred-tools-compat.mjs": "./deferred-tools-compat.mjs",
     "./tool-gate.mjs": "./tool-gate.mjs",
     "./effort-policy.mjs": "./effort-policy.mjs",
     "./shell-policy.mjs": "./shell-policy.mjs",

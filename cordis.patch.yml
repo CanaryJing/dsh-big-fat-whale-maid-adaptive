@@ -342,3 +342,8 @@
           # dsh 0.1.6+ added this row; it post-dates the legacy composition.
           - id: present
             name: '@deepseek-ai/dsh-tool-present'
+
+    # Provider transport compatibility belongs to the bundle, not an agent
+    # scope: PTC may be selected/switched independently of this preset.
+    - id: whale-maid-deferred-tools-compat
+      name: dsh-preset-big-fat-whale-maid-adaptive/deferred-tools-compat.mjs

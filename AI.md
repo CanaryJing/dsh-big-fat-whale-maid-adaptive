@@ -9,6 +9,10 @@
 - v3.1 起路由取最近真实用户请求（含 consult 带）；`delivery_check` 的实现抽到 `delivery-check.mjs`；`dev_tool_search` 增加固定 `groups`；shell 路由文案以 `shell-policy.mjs` 为唯一来源。
 - v3.1.0 修复复审：明确问句优先于动词、范围限制仍实施、多段 runtime 快照整块剥离；gate 恢复必须 callId 配对成功 result；视觉交付必须接受 reviewed 图片证据；真实 DSH Tools 注册与 `tool/result.meta` 恢复有集成测试。
 
+## 2026-10-26 PTC 兼容修复
+
+`deferred-tools-compat.mjs` 在 bundle/profile 层挂载，不在 agent 预设子树。它从正在运行的引擎入口解析同一份 DeepSeek Messages 模块，校验 LLM runtime 身份，只装饰公开 `prepareCall` / `stream`；prepared stream 闭包保持原 connection snapshot。仅在投影后非空工具全部延迟时添加不可调用的传输锚点，保持真实工具的延迟标记与历史消息，不修改底座文件、原请求或全局 fetch。引用计数支持卸载/HMR 恢复。旧引擎无对应适配器时明确告警。测试 `tests/deferred-tools-compat.test.mjs`；当前 0.2.1-rc.2 + 真实 pwsh 全套为 156/156，模拟 HTTP/SSE 不代表真实上游验收。
+
 ## v3.1 关键模块
 
 | 文件 | 作用 |

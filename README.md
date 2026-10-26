@@ -26,6 +26,13 @@ DSH 的个人工程预设：**思考强度三档联动工具面（low 原生 / h
 - **手动锁定**：设环境变量 `DSH_MAID_EFFORT=low|high|max`（优先级最高，便于测试与临时压制）。`dev_router_status` 的 `effort=` 行会报告当前档位、呈现、解锁与强度来源。
 - **全局汇报纪律**：persona 前缀新增两条（任何档位都生效）——主动汇报进度（几步一次说清在做什么、改了什么、还剩什么），遇到检查失败/路径错误/权限拒绝/计划不再成立时当轮立即汇报，不要闷头重试。
 
+## v3.2.0 当前发行包修复（2026-10-26）
+
+- 修复 DSH 0.2.1-rc.2 同一会话切到 PTC 时 DeepSeek 报 `All tools cannot be deferred`：新增 bundle 级 `deferred-tools-compat.mjs`，在 DeepSeek 适配器的请求投影之后，仅对非空且全延迟的工具列表加入不可调用的传输占位声明，策略与引擎现有 Anthropic 占位声明一致。
+- 真实工具（包括 `run_code`）继续保持延迟加载，工具加入顺序、冻结请求、会话日志、prepared connection 快照和审批执行边界均不改变；普通/native、首轮 PTC、其他提供者不变。不修改底座文件或全局 fetch；卸载 bundle 时恢复适配器方法。兼容层位于 profile 范围，安装此 bundle 后也覆盖切换到内置 PTC 预设的请求。
+- 同版本覆盖 v3.2.0 的发行资产与源码 tag；旧包已有留底。重新下载并安装，重启宿主后生效。旧引擎没有 DeepSeek Messages 适配器时明确告警并保持原行为。
+- 当前 Tauri 引擎 0.2.1-rc.2 + 真实 PowerShell 7：**156 tests / 156 pass / 0 fail / 0 skip**。包括真实 DeepSeek 序列化报文与模拟 HTTP/SSE 的错误前后对照；不等同于真实上游端到端验证。
+
 ## v3.1.0 重点：路由、交付、工具组与单一 shell 规则
 
 - **路由看最近真实用户请求**：`sessionMode` 不再取第一条 `user/message`。它逆序找最近一条真实用户实质请求，忽略 plugin/plugin:*/agent-message/model-selection/user-approval 等自动来源，剥离 openviking/runtime 等包装块；`Current runtime context` 按整个多段快照剥离，不会只删标题段后让 `Current working directory` / `You are…` 覆盖真实任务，同一消息包装外的真实请求保留。最近的「继续/好的/可以」等简短应承沿用上一实质任务。新增 **consult** 带：明确问句（「如何修复这个错误？」「Why create this file?」）即使含 fix/build 等动词也先回答；解释、评审、分析、只读、先给计划不催写代码；明确实施意图仍走 react/spec（例如「按计划实现修复」）。**范围限制不是拒绝实施**：「只做这个错误的修复」「修复这个错误，不要改其他文件」仍走 spec。没有可靠意图时返回中性 `weak`。英文动词按单词边界匹配，`address`/`prefix`/`somehow` 不会误命中 add/fix/how；代码块/引用块不参与判断。
