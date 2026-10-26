@@ -103,7 +103,7 @@ export function bandGuidance(band, options) {
   if (band === 'high') {
     return [
       `本档工具以 PTC 程序形式呈现：唯一能直接调用的工具是 run_code，其余工具都要在程序里调用。`,
-      `未常驻的工具仍需 ${GATE_TOOL} 解锁（解锁后同样在程序里调用）；先解锁再写程序，不要反复试错。`,
+      `run_code 始终默认可见，无须解锁。在本次程序内调用 ${GATE_TOOL} 解锁后先返回；下一次 run_code 才绑定新工具，不要在同一程序内继续调用刚解锁的工具。`,
     ].join('\n')
   }
   if (band === 'max') {

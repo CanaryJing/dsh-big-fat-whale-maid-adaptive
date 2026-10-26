@@ -4,6 +4,13 @@ DSH 的个人工程预设：**思考强度三档联动工具面（low 原生 / h
 
 整个目录是一个 DSH bundle；自定义模块只使用 Node 内置模块及包内导入，不依赖 `dsh-wsl-workspace`。组合本身仍依赖 DSH 官方插件与服务，不是脱离 DSH 的独立运行时。
 
+## PTC 门控补修（2026-10-26）
+
+- `run_code` 为固定入口，无须解锁，不交给能力过滤器裁剪。high 在 SDK 生成前应用 agent 级 restriction，同时限制继承工具的 SDK 与嵌套执行；max 全量但不移除外部限制。
+- `dev_tool_search` 只同步撤下本门控自己的 mask 读取实际目录，随后立即恢复；不会解除其它 scope restriction 或审批。申请解锁后本次程序先返回，下一次 `run_code` 才绑定新工具。
+- 冷启动与实时事件支持 `tool/ptc-dispatch-start` / `tool/ptc-dispatch`，按 root/parent/subcall 配对成功结果并恢复精确 accepted；失败、孤立结果、空 accepted 不恢复。
+- 本次仅跑 45 项针对性测试，45 通过、0 跳过；含真实 0.2.1-rc.2 ToolRuntime 的 SDK/执行限制、切档、会话隔离与外部限制保留，未重跑全部测试或真实上游 API。
+
 ## v3.2.0 重点：思考强度三档驱动工具面
 
 预设现在把会话的**推理强度**当成第一等输入。档位归一严格照 [DeepSeek 思考模式文档](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode/) 的映射表：

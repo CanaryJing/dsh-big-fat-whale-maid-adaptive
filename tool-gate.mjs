@@ -19,9 +19,9 @@
  * 为什么读会话事件而不是另存状态：会话日志本身就是持久且可恢复的，
  * 冷启动扫描一次即可重建解锁集合；压缩后仍在内存里，不需要额外存储服务。
  *
- * 注意：裁剪只作用于 `system-prompt/assemble` 返回的 `tools`，
- * 不动 sections；`ctx.tools.schemas()` 仍是全量目录，所以 dev_tool_search
- * 能搜到被锁住的工具。工具被锁时若被直接调用，DSH 报 UNKNOWN_TOOL。
+ * Native 裁剪组装后的 tools；PTC 在组装前使用 agent scope restriction，
+ * 同时约束 SDK 与嵌套执行。run_code 是保留传输入口，永不裁剪。
+ * 搜索仅同步撤下本门控自己的限制读取目录，随后立即恢复，保留其它限制。
  */
 
 /** Cordis 插件名（loader 诊断用）。 */
@@ -330,11 +330,21 @@ function acceptedFromGateText(event) {
  *     （旧日志无法区分成功与中断，保守保持锁定，需要重新调用解锁）。
  * 其它工具的 result 文本/meta 即使伪造 gate 名字也不会被采信。
  */
+function normalizeGateEvent(event) {
+  if (event?.type !== 'tool/ptc-dispatch-start' && event?.type !== 'tool/ptc-dispatch') return event
+  const data = event.data
+  if (data?.name !== GATE_TOOL || typeof data.subCallId !== 'string' || !data.subCallId
+      || typeof data.parentCallId !== 'string' || !data.parentCallId) return event
+  const callId = `ptc:${JSON.stringify([data.rootCallId ?? null, data.parentCallId, data.subCallId])}`
+  if (event.type === 'tool/ptc-dispatch-start') return { ...event, type: 'tool/call', data: { ...data, callId } }
+  return { ...event, type: 'tool/result', data: { ...data, message: { toolCallId: callId, isError: data.isError !== false, content: data.content } } }
+}
+
 function sessionEvents(session) {
-  if (Array.isArray(session?.events)) return session.events
+  if (Array.isArray(session?.events)) return session.events.map(normalizeGateEvent)
   if (typeof session?.snapshotEvents === 'function') {
     try {
-      return session.snapshotEvents()
+      return session.snapshotEvents().map(normalizeGateEvent)
     } catch {
       return []
     }
@@ -496,6 +506,7 @@ export function apply(ctx, config) {
 
   // ── 增量维护解锁集合：只有与 gate callId 配对的成功 result 才是事实 ──
   ctx.on('session/event', (session, event) => {
+    event = normalizeGateEvent(event)
     if (session === undefined || session.id === undefined || event === undefined) return
     if (event.type === 'tool/call') {
       const call = gateCallFromEvent(event)
@@ -521,10 +532,51 @@ export function apply(ctx, config) {
     for (const toolName of accepted) entry.unlocked.add(toolName)
   })
 
-  // ── 门控本体：只裁 tools，不动 sections ────────────────────────────────
+  // PTC SDK and execution share official per-agent restrictions. Discovery
+  // temporarily lifts ONLY our own mask synchronously (no await), retaining
+  // every ancestor/sibling restriction and never changing permissions.
+  const scopeGates = new WeakMap()
+  const ownedMasks = new Set()
+  ctx.effect?.(() => () => {
+    for (const mask of ownedMasks) mask.dispose?.()
+    ownedMasks.clear()
+  })
+  function liftMask(agent) {
+    const mask = agent?.ctx && scopeGates.get(agent.ctx)
+    mask?.dispose?.()
+    if (mask) mask.dispose = undefined
+    return mask
+  }
+  function discoverySchemas(agent) {
+    const mask = liftMask(agent)
+    try { return ctx.tools.schemas(agent) ?? [] }
+    finally {
+      if (mask?.denied.length) mask.dispose = agent.ctx.tools.restrict({ deny: mask.denied })
+    }
+  }
+  function alignPtcGate(agent) {
+    if (!agent?.ctx || !agent.session) return
+    const old = liftMask(agent)
+    if (old) { old.denied = []; ownedMasks.delete(old) }
+    if (!includeSubagents && (agent.session.header?.delegationDepth ?? 0) > 0) return
+    if (currentGateMode(agent.session) !== 'progressive' || agent.ctx.tools.modeFor(agent) !== 'ptc') return
+    const catalog = ctx.tools.schemas(agent)
+    const inherited = agent.ctx.tools.view(agent).restrictableNames
+    const keep = new Set([...resident, ...entryFor(agent.session).unlocked])
+    // Never name run_code in restrict(): the engine preserves it separately.
+    // Agent-local answer/transport tools remain exempt, as required by DSH.
+    const denied = catalog.map(tool => tool.name).filter(name => name !== 'run_code' && inherited.has(name) && !keep.has(name))
+    const mask = { denied, dispose: undefined }
+    scopeGates.set(agent.ctx, mask)
+    ownedMasks.add(mask)
+    if (denied.length) mask.dispose = agent.ctx.tools.restrict({ deny: denied })
+  }
+
+  // Native: filter wire schemas. PTC: filter registry before SDK assembly.
   // v3.2.0：监听器始终注册，模式在每次组装时按会话读取（currentGateMode），
   // 因此 effort-policy 可以在运行期（下一轮）切档，不必重装插件。
   ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
+    alignPtcGate(context?.agent)
     const assembled = await next()
     const gatedSession = context?.agent?.session
     if (currentGateMode(gatedSession) !== 'progressive') return assembled
@@ -536,11 +588,12 @@ export function apply(ctx, config) {
       if (tools === undefined) return assembled
       // 安全网：门控工具没注册成功时保持全量，绝不把会话锁死。
       if (!tools.some((tool) => tool?.name === GATE_TOOL)) {
+        if (tools.some((tool) => tool?.name === 'run_code')) return assembled
         warnOnce(`${name}: ${GATE_TOOL} is not in the assembled catalog — exposing every tool`)
         return assembled
       }
       const entry = entryFor(session)
-      const keep = new Set(resident)
+      const keep = new Set([...resident, 'run_code'])
       for (const toolName of entry.unlocked) keep.add(toolName)
       return { ...assembled, tools: tools.filter((tool) => keep.has(tool?.name)) }
     } catch (error) {
@@ -588,7 +641,7 @@ export function apply(ctx, config) {
       try {
         // 执行者就是观察 scope：preset 层注册的工具要按 agent 查才看得见。
         // 组展开也只使用这份实际目录，绝不绕 scope 解锁不可访问工具。
-        schemas = ctx.tools.schemas(exec?.agent) ?? []
+        schemas = discoverySchemas(exec?.agent)
       } catch (error) {
         lines.push(`目录不可用：${String((error && error.message) || error)}`)
       }
@@ -626,7 +679,7 @@ export function apply(ctx, config) {
           const shown = ranked.slice(0, maxSearchResults)
           lines.push(`匹配工具（${shown.length}${ranked.length > shown.length ? ` / ${ranked.length}` : ''}）：`)
           for (const { schema } of shown) {
-            const locked = !runtime.resident.has(schema.name) && !(session !== undefined && (runtime.state.get(session.id)?.unlocked.has(schema.name) ?? false))
+            const locked = currentGateMode(session) !== 'full' && schema.name !== 'run_code' && !runtime.resident.has(schema.name) && !(session !== undefined && (runtime.state.get(session.id)?.unlocked.has(schema.name) ?? false))
             const description = String(schema.description ?? '').split('\n')[0].slice(0, 90)
             lines.push(`- ${schema.name}${locked ? ' [未解锁]' : ''}：${description}`)
           }
