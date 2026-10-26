@@ -175,6 +175,7 @@ const runtime = {
   includeSubagents: false,
   /** 运行期切档后的通知钩子（apply 时挂上），通知失败不影响切档本身。 */
   onModeChange: undefined,
+  alignBeforeSnapshot: undefined,
 }
 
 /**
@@ -218,6 +219,11 @@ export function setGateMode(mode, options) {
  * 当前门控模式（插件未装载时返回最近一次设定值）。
  * @param {object} [session] 传了就返回该会话的覆盖值，否则返回全局默认
  */
+/** Called by effort preflight after presentation changes, before schema collection. */
+export function alignToolGate(agent) {
+  runtime.alignBeforeSnapshot?.(agent)
+}
+
 export function currentGateMode(session) {
   if (session !== undefined && session !== null && typeof session === 'object') {
     const override = runtime.modeBySession.get(session)
@@ -555,7 +561,7 @@ export function apply(ctx, config) {
     }
   }
   function alignPtcGate(agent) {
-    if (!agent?.ctx || !agent.session) return
+    if (!agent?.ctx || !agent.session || typeof agent.ctx.tools.modeFor !== 'function') return
     const old = liftMask(agent)
     if (old) { old.denied = []; ownedMasks.delete(old) }
     if (!includeSubagents && (agent.session.header?.delegationDepth ?? 0) > 0) return
@@ -572,11 +578,22 @@ export function apply(ctx, config) {
     if (denied.length) mask.dispose = agent.ctx.tools.restrict({ deny: denied })
   }
 
-  // Native: filter wire schemas. PTC: filter registry before SDK assembly.
+  // Variables resolve before tool providers and section snapshots in DSH.
+  // The effort preflight also invokes this callback after changing presentation,
+  // so either plugin registration order reaches the same snapshot.
+  runtime.alignBeforeSnapshot = alignPtcGate
+  ctx.effect?.(() => () => {
+    if (runtime.alignBeforeSnapshot === alignPtcGate) runtime.alignBeforeSnapshot = undefined
+  })
+  ctx.systemPrompt?.variable?.('whale_maid_gate_preflight', ({ agent }) => {
+    alignPtcGate(agent)
+    return ''
+  })
+
+  // Native post-filter only; PTC registry state is already aligned above.
   // v3.2.0：监听器始终注册，模式在每次组装时按会话读取（currentGateMode），
   // 因此 effort-policy 可以在运行期（下一轮）切档，不必重装插件。
   ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
-    alignPtcGate(context?.agent)
     const assembled = await next()
     const gatedSession = context?.agent?.session
     if (currentGateMode(gatedSession) !== 'progressive') return assembled

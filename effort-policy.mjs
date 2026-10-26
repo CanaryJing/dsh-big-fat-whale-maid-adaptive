@@ -21,7 +21,7 @@
  */
 
 import { sessionEvents } from './router-core.mjs'
-import { currentGateMode, GATE_TOOL, setGateMode } from './tool-gate.mjs'
+import { alignToolGate, currentGateMode, GATE_TOOL, setGateMode } from './tool-gate.mjs'
 
 /** Cordis 插件名（loader 诊断用）。 */
 export const name = 'effort-policy'
@@ -261,18 +261,17 @@ export function apply(ctx, config) {
     alignPresentation(agent.ctx, behavior.presentation)
   }
 
-  // 每轮 prompt 组装时对齐一次（轮内不再改动）：这里能拿到 agent（因此能拿
-  // agent.ctx 与 session），而且对齐发生在 next() 之前，PTC 说明段当轮就绪。
-  // 注意 `agent/pre-step` 的 payload 里没有 agent（引擎通过派发 carrier 传），
-  // 所以不能挂在那里。
-  ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
+  // system-prompt/assemble runs AFTER schemas and sections were captured.
+  // Variable providers run BEFORE those snapshots, including on the first call.
+  ctx.effect(() => ctx.systemPrompt.variable('whale_maid_effort_preflight', (context) => {
     try {
       align(context?.agent)
     } catch (error) {
       warnOnce(`${name}: effort alignment failed: ${String((error && error.message) || error)}`)
     }
-    return next()
-  })
+    alignToolGate(context?.agent)
+    return ''
+  }))
 
   // 档位状态段：紧跟环境段的 [MODEL] 之后（order 11），每轮按真实 effort 渲染。
   ctx.effect(() => ctx.systemPrompt.section({

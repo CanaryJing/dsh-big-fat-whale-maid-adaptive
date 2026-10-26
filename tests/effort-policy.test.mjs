@@ -35,6 +35,10 @@ function createHarness(options = {}) {
       }
     },
     systemPrompt: {
+      variable: (key, provider) => {
+        listeners.set(key, provider)
+        return () => listeners.delete(key)
+      },
       section: (descriptor) => {
         sections.set(descriptor.name, descriptor)
         return () => sections.delete(descriptor.name)
@@ -78,9 +82,9 @@ function makeAgent(harness, events = [], extra = {}) {
 }
 
 async function preStep(listeners, agent) {
-  const handler = listeners.get('system-prompt/assemble')
-  assert.ok(handler, 'effort-policy must align on system-prompt/assemble')
-  return handler({}, { agent }, async () => ({ kind: 'continue' }))
+  const handler = listeners.get('whale_maid_effort_preflight')
+  assert.ok(handler, 'effort-policy must align before schema/section snapshots')
+  return handler({ agent })
 }
 
 test('effort mapping follows the DeepSeek documentation table', () => {
@@ -202,7 +206,7 @@ test('a failing PTC declaration falls back to native without breaking the turn',
   const { agent } = makeAgent(h, [selection('max')])
 
   const decision = await preStep(h.listeners, agent)
-  assert.deepEqual(decision, { kind: 'continue' }, 'next() still runs')
+  assert.equal(decision, '', 'preflight remains non-fatal when PTC is unavailable')
   assert.equal(h.presentations.length, 0)
   assert.equal(h.warnings.length, 1)
   assert.match(h.warnings[0], /unavailable, staying on native/)
