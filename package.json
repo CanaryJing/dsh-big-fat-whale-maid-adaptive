@@ -1,6 +1,6 @@
 {
   "name": "dsh-preset-big-fat-whale-maid-adaptive",
-  "version": "3.2.1",
+  "version": "3.2.2",
   "private": true,
   "description": "DS女仆长模式 — reasoning-effort bands drive the tool face (low: native + resident core with on-demand unlock; high: PTC programmatic tools with on-demand unlock; max: PTC + full catalog + unlimited-budget prompt), Chinese-reasoning system prompt with progress/problem reporting rules, cached environment + live model identity, safe workdirs, verified PowerShell 7 binding.",
   "type": "module",
