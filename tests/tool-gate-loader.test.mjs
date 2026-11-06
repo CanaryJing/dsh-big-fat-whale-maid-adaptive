@@ -13,13 +13,18 @@ test('tool-gate mounts through real Cordis dependency guard and assembles a fres
   const { Context } = await load('@deepseek-ai/cordis')
   const { SystemPrompt } = await load('@deepseek-ai/dsh-system-prompt')
   const { ToolRuntime } = await load('@deepseek-ai/dsh-tools')
+  const nativeExecutor = await load('@deepseek-ai/dsh-tool-executor-native')
   const root = new Context()
   // Providers MUST be separate fibers, as in the production loader. Direct
   // constructors on root leak root dependency access and hide missing injects.
   const promptProvider = root.plugin(SystemPrompt, { includeHarnessIdentity: false })
   const toolsProvider = root.plugin(ToolRuntime, {})
+  // dsh 0.2.2's SystemPrompt.assemble selects a tool executor; production
+  // compositions always mount one, so the regression harness must too.
+  const executorProvider = root.plugin(nativeExecutor, {})
   await promptProvider.await()
   await toolsProvider.await()
+  await executorProvider.await()
   const prompt = root.get('systemPrompt')
   const tools = root.get('tools')
   const fiber = root.plugin(gate, { mode: 'progressive', residentTools: ['read'] })

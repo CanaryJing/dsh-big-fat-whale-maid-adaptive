@@ -6,10 +6,16 @@ import { pathToFileURL } from 'node:url'
 import { readFileSync } from 'node:fs'
 import { registerEnvironmentContext } from '../environment-context.mjs'
 import { apply as applyRouter } from '../router-progressive.mjs'
+import { supportsLegacyPresentation } from './support/engine-capabilities.mjs'
 
 const anchor = process.env.DSH_TEST_ANCHOR
+const skip = !anchor
+  ? 'needs DSH_TEST_ANCHOR'
+  : supportsLegacyPresentation(anchor)
+    ? false
+    : 'needs the dsh 0.2.1 tools.presentAs API (0.2.2 uses executor plugins)'
 
-test('real DSH registry + persona + official model selection preserve ENV and current route', { skip: !anchor }, async () => {
+test('real DSH registry + persona + official model selection preserve ENV and current route', { skip }, async () => {
   const require = createRequire(resolve(anchor, 'package.json'))
   const load = (name) => import(pathToFileURL(require.resolve(name)).href)
   const { Context } = await load('@deepseek-ai/cordis')
@@ -17,6 +23,7 @@ test('real DSH registry + persona + official model selection preserve ENV and cu
   const { createScope, scopeTarget } = await load('@deepseek-ai/dsh-scope')
   const { installModelSelection } = await load('@deepseek-ai/dsh-agent')
   const { ToolRuntime } = await load('@deepseek-ai/dsh-tools')
+  const nativeExecutor = await load('@deepseek-ai/dsh-tool-executor-native')
   const persona = await load('@deepseek-ai/dsh-persona')
   const YAML = require('js-yaml')
   const JsExpr = new YAML.Type('tag:yaml.org,2002:js', { kind: 'scalar', construct: (value) => value })
@@ -30,6 +37,8 @@ test('real DSH registry + persona + official model selection preserve ENV and cu
   // The real registry, not a Map-backed mock: delivery_check must pass the
   // engine's own schema validation and be visible through schemas().
   const toolRuntime = new ToolRuntime(root, {})
+  // dsh 0.2.2 prompt assembly selects a tool executor; mount the deployment one.
+  await root.plugin(nativeExecutor, {}).await()
   prompt.variable('model', ({ agent }) => agent?.options.model)
   prompt.variable('provider', ({ agent }) => agent?.options.provider)
   // Preset contributions belong to a standing scope; each agent joins below it.

@@ -244,8 +244,11 @@
               - id: tool-subagent-control
                 name: '@deepseek-ai/dsh-tool-subagent-control'
 
-              - id: tool-subagent-list-agents
-                name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+              # dsh 0.2.2 把独立的 `list-agents` 插件并进了
+              # @deepseek-ai/dsh-tool-subagent-control：上面的根行现在自己注册
+              # `list_agents`，旧的 ./list-agents 子路径已从 exports 移除
+              # （ERR_PACKAGE_PATH_NOT_EXPORTED），保留这一行会让装载审计报
+              # `never started`。0.2.1 及更早版本请继续用 v3.2.2。
 
               - id: tool-subagent
                 name: '@deepseek-ai/dsh-tool-subagent'

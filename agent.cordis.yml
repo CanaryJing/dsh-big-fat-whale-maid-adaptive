@@ -294,8 +294,8 @@
     - id: tool-subagent-control
       name: '@deepseek-ai/dsh-tool-subagent-control'
 
-    - id: tool-subagent-list-agents
-      name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+    # dsh 0.2.2 起 `list_agents` 由上面的 tool-subagent-control 根插件注册，
+    # ./list-agents 子路径已移除；保留此行会在装载审计里报 never started。
 
     - id: tool-subagent
       name: '@deepseek-ai/dsh-tool-subagent'

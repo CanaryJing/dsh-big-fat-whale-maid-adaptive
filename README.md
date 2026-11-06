@@ -1,18 +1,17 @@
-# DS女仆长模式 · v3.2.1
+# DS女仆长模式 · v3.2.3
 
 DSH 的个人工程预设：**思考强度三档联动工具面（low 原生 / high PTC / max PTC+全量）、系统提示词要求中文思考并主动汇报进度与风险、常驻核心按需解锁、可靠环境简报、实时请求模型 ID、安全工作目录、PowerShell 7 优先绑定**，保留温柔严谨的蓝发蓝瞳鲸鱼娘女仆长风格。
 
 整个目录是一个 DSH bundle；自定义模块只使用 Node 内置模块及包内导入，不依赖 `dsh-wsl-workspace`。组合本身仍依赖 DSH 官方插件与服务，不是脱离 DSH 的独立运行时。
 
-## v3.2.1：PTC 门控补修（2026-10-26）
+## v3.2.3：适配 DSH 0.2.2 装载（2026-11-07）
 
-[下载 v3.2.1](https://github.com/CanaryJing/dsh-big-fat-whale-maid-adaptive/releases/tag/v3.2.1) · [发行说明](./releases/v3.2.1.md)
+[下载 v3.2.3](https://github.com/CanaryJing/dsh-big-fat-whale-maid-adaptive/releases/tag/v3.2.3) · [发行说明](./releases/v3.2.3.md)
 
-- `run_code` 为固定入口，无须解锁，不交给能力过滤器裁剪。high 在 SDK 生成前应用 agent 级 restriction，同时限制继承工具的 SDK 与嵌套执行；max 全量但不移除外部限制。
-- `dev_tool_search` 只同步撤下本门控自己的 mask 读取实际目录，随后立即恢复；不会解除其它 scope restriction 或审批。申请解锁后本次程序先返回，下一次 `run_code` 才绑定新工具。
-- 冷启动与实时事件支持 `tool/ptc-dispatch-start` / `tool/ptc-dispatch`，按 root/parent/subcall 配对成功结果并恢复精确 accepted；失败、孤立结果、空 accepted 不恢复。
-- 修正首轮和切档时序：使用早于工具/section 快照的变量提供者预对齐 presentation，再对齐门控；不再在太晚的 assemble waterfall 才切换。high/max 首轮即声明 run_code，SDK 与执行范围当轮一致。
-- 51 项针对性测试全部通过、0 跳过；新增两种插件注册顺序下的 78 次真实组装快照，覆盖首轮 low/high/max、连续切档、模型选择事件、解锁下一次生效及外部限制。未重跑全部测试或真实上游 API。
+- DSH 0.2.2 把独立的 `list-agents` 插件并进 `@deepseek-ai/dsh-tool-subagent-control`，`./list-agents` 子路径已从 `exports` 移除。v3.2.2 遗留的 `tool-subagent-list-agents` 行因此解析失败，装载审计把它报成 `never started`；本版删除该行，`list_agents` 能力不变（由根插件注册）。
+- `package.json` 增加 `engines.dsh: ">=0.2.2-rc.1 <0.3.0-0"`：0.2.1 及更早内核请继续使用 v3.2.2，不再出现「能装但有一行装不上」的状态。
+- 新增 `tests/plugin-resolution.test.mjs`：锚定真实引擎解析补丁里每个插件名，上游再次合并或删除子路径时先在这里失败，而不是等用户装载审计报 `never started`。
+- **已知限制**：DSH 0.2.2 用执行器插件（`-native` / `-ptc`）取代了 `tools.presentAs()` 与 `tools.modeFor()`，本版仍沿用 0.2.1 的呈现 API。在 0.2.2 上预设可干净装载、`low` 档行为不变，但 `high` / `max` 会告警一次并回落 `native`（不切 PTC）。三档迁移到执行器模型排在下一个功能版本。
 
 ## v3.2.0 重点：思考强度三档驱动工具面
 
@@ -117,7 +116,9 @@ v3 的做法：
 
 ## 安装 / 升级
 
-本版在 **DSH 0.2.0-rc.2** 实测。使用当前支持 bundle、prompt variable 与 section API 的 DSH；不再支持旧 `.agent-presets` 目录安装方式。
+本版在 **DSH 0.2.2-rc.1** 实测，并声明 `engines.dsh: ">=0.2.2-rc.1 <0.3.0-0"`。0.2.1 及更早内核请继续使用 [v3.2.2](https://github.com/CanaryJing/dsh-big-fat-whale-maid-adaptive/releases/tag/v3.2.2)：旧内核没有 `list_agents` 的根插件实现，本版删除的那一行在那里是必需的。使用当前支持 bundle、prompt variable 与 section API 的 DSH；不再支持旧 `.agent-presets` 目录安装方式。
+
+> 已知限制：0.2.2 的执行器模型取代了 `tools.presentAs()`，`high` / `max` 档在本版会告警并回落 `native`，三档迁移见 [v3.2.3 发行说明](./releases/v3.2.3.md)。
 
 ```bash
 # 从源码目录安装；请替换路径和实际 profile
@@ -168,6 +169,9 @@ v3 的按需解锁是自研门控（`tool-gate.mjs`：常驻核心 + `dev_tool_s
 
 ## 版本历史
 
+- **v3.2.3**：适配 DSH 0.2.2 —— `list_agents` 已并入 `@deepseek-ai/dsh-tool-subagent-control` 根插件，删除预设里失效的 `tool-subagent-list-agents` 行，修掉装载审计的 `never started`；新增插件名解析回归测试与 `engines.dsh` 声明。三档到执行器模型的迁移尚未完成。详见 [发行说明](./releases/v3.2.3.md)。
+- **v3.2.2**：`subagent` 启用宿主模型选择（`modelSelectionSettings`），`agent.cordis.yml` 与 bundle patch 同步；子代理可选 provider / model / reasoning effort。
+- **v3.2.1**：PTC 门控收紧（high 档裁剪 SDK 与嵌套执行）；切档前移到早期 prompt 变量提供者修首轮/切档时序；`tool-gate` 补声明 `systemPrompt` 注入。详见 [发行说明](./releases/v3.2.1.md)。
 - **v3.2.0**：思考强度三档（low/high/max）驱动工具呈现、解锁策略与预算提示；`tool-gate` 支持运行期与会话级切档；`effort-policy.mjs` 新增档位归一、agent scope 呈现声明与 fail-open 回落；persona 增加「主动汇报进度 / 遇阻立即报告」全局纪律；`dev_router_status` 报告 effort 状态。详见 [发行说明](./releases/v3.2.0.md)。
 - **v3.1.0**：路由改取最近真实用户请求并新增 consult 带（明确问句优先、范围限制仍实施）；`delivery_check` 收紧原生 cwd/可读性/视觉证据/ZIP 边界检查并抽为 `delivery-check.mjs`；`dev_tool_search` 新增固定工具组与 callId 配对恢复；新增 `shell-policy.mjs` 统一 shell 路由并追加 order 10300 的靠后系统段；真实 DSH Tools/SystemPrompt 集成测试。详见 [发行说明](./releases/v3.1.0.md)。
 - **v3.0.0**：全能工具面改为「常驻核心 + 按需解锁」（`tool-gate.mjs` / `dev_tool_search`），解锁持久化、子代理不裁剪、`mode: full` 可回退；`dev_router_status` 报告真实门控状态。详见 [发行说明](./releases/v3.0.0.md)。

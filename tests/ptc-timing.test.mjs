@@ -5,17 +5,26 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { apply as gateApply, GATE_TOOL } from '../tool-gate.mjs'
 import { apply as effortApply } from '../effort-policy.mjs'
+import { supportsLegacyPresentation } from './support/engine-capabilities.mjs'
 const anchor=process.env.DSH_TEST_ANCHOR
+const skip = !anchor
+ ? 'needs DSH_TEST_ANCHOR'
+ : supportsLegacyPresentation(anchor)
+  ? false
+  : 'needs the dsh 0.2.1 tools.presentAs API (0.2.2 uses executor plugins)'
 const tool=name=>({name,description:name,parameters:{type:'object',properties:{}},output:{schema:{type:'object',properties:{}},render:()=>[]},async execute(){return {}}})
 for(const initial of ['low','high','max']) for(const order of ['effort-first','gate-first']) {
- test('real first '+initial+' and live transitions ('+order+')',{skip:!anchor},async()=>{
+ test('real first '+initial+' and live transitions ('+order+')',{skip},async()=>{
   const require=createRequire(resolve(anchor,'package.json'))
   const load=name=>import(pathToFileURL(require.resolve(name)).href)
   const {Context}=await load('@deepseek-ai/cordis')
   const {SystemPrompt}=await load('@deepseek-ai/dsh-system-prompt')
   const {ToolRuntime}=await load('@deepseek-ai/dsh-tools')
+  const nativeExecutor=await load('@deepseek-ai/dsh-tool-executor-native')
   const {createScope}=await load('@deepseek-ai/dsh-scope')
   const root=new Context(), prompt=new SystemPrompt(root,{includeHarnessIdentity:false}), registry=new ToolRuntime(root,{})
+  // dsh 0.2.2 prompt assembly selects a tool executor; mount the deployment one.
+  await root.plugin(nativeExecutor,{}).await()
   root.provide('ptcRuntime',{language:'typescript',programFormat:'function-body'})
   const parent={}; const preset=createScope(root,parent)
   const agent={options:{reasoningEffort:initial},session:{id:initial+order,header:{},events:[]}}

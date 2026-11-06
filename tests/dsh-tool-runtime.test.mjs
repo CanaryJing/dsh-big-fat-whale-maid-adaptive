@@ -5,8 +5,14 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { randomUUID } from 'node:crypto'
 import { apply as applyGate, GATE_TOOL } from '../tool-gate.mjs'
+import { supportsLegacyPresentation } from './support/engine-capabilities.mjs'
 
 const anchor = process.env.DSH_TEST_ANCHOR
+const skip = !anchor
+  ? 'needs DSH_TEST_ANCHOR'
+  : supportsLegacyPresentation(anchor)
+    ? false
+    : 'needs the dsh 0.2.1 tools.presentAs API (0.2.2 uses executor plugins)'
 
 async function loadEngine() {
   const require = createRequire(resolve(anchor, 'package.json'))
@@ -60,7 +66,7 @@ async function visible(prompt, session) {
   return assembly.tools.map((tool) => tool.name)
 }
 
-test('real DSH Tools registry executes gate output meta and recovery pairs the callId', { skip: !anchor }, async () => {
+test('real DSH Tools registry executes gate output meta and recovery pairs the callId', { skip }, async () => {
   const { Context, SystemPrompt, ToolRuntime } = await loadEngine()
   const root = new Context()
   const prompt = new SystemPrompt(root, { includeHarnessIdentity: true })

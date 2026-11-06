@@ -6,7 +6,7 @@
 
 当前权威文件是 `package.json` + `cordis.patch.yml`。整个包必须一起安装，本地插件通过包内子路径解析。不要挑选几个 `.mjs` 复制到旧 `.agent-presets` 目录，不要改旧 `agent.cordis.yml` / `preset.yml` 来配置现版。
 
-DSH 官方插件、工具服务、模型提供者由宿主提供。本版在 DSH 0.2.0-rc.2 验证。Windows 的 Git Bash 和 PowerShell 均在母系统执行；WSL Bash 为独立的 Linux 执行世界。没有 WSL 不影响其他工具。
+DSH 官方插件、工具服务、模型提供者由宿主提供。本版在 DSH 0.2.2-rc.1 验证（`engines.dsh` 声明 `>=0.2.2-rc.1 <0.3.0-0`；0.2.1 及更早请用 v3.2.2）。Windows 的 Git Bash 和 PowerShell 均在母系统执行；WSL Bash 为独立的 Linux 执行世界。没有 WSL 不影响其他工具。
 
 ## 2. 备份与安装
 
@@ -68,7 +68,7 @@ DSH_TEST_ANCHOR='C:/Users/admin/AppData/Roaming/npm/node_modules/@deepseek-ai/ds
 PWSH_RUNTIME_REAL_PATH='C:/Program Files/PowerShell/7/pwsh.exe' npm test
 ```
 
-当前 Windows 工作树在同时设置两个变量后：**122 tests / 122 pass / 0 fail / 0 skip**（2026-10-22 实测）。未设置 anchor/真实 pwsh 路径时，相关集成用例显式 skip，不能计入通过数。
+当前 Windows 工作树（2026-11-07，anchor 指向桌面版 DSH 0.2.2-rc.1，并设置真实 pwsh 7 路径）：**168 tests / 159 pass / 0 fail / 9 skip**。9 个 skip 全是三档联动的 0.2.1 行为测试——0.2.2 用执行器插件取代了 `tools.presentAs()`，这批用例按能力探测显式跳过并标注原因，等三档移植完成后再打开。未设置 anchor/真实 pwsh 路径时，相关集成用例同样显式 skip，不能计入通过数。
 
 常规 PowerShell 选择/默认回退测试完全 mock，不要求卸载本机 PowerShell 7 或真的运行 5.1。真实绑定检查仅执行指定的 PowerShell 7 路径。Git Bash 真实转义测试创建临时目录并自行清理，不运行攻击命令或 WSL。真实 DSH 集成使用已安装引擎的 `SystemPrompt` / `ToolRuntime`，验证 delivery schema、gate `presentationMeta` 持久化形状、callId 配对恢复与 shell section 真实顺序；不改 `node_modules`。
 

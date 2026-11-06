@@ -4,17 +4,24 @@ import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { apply, setGateMode, describeGate, GATE_TOOL } from '../tool-gate.mjs'
+import { supportsLegacyPresentation } from './support/engine-capabilities.mjs'
 const anchor=process.env.DSH_TEST_ANCHOR
+const skip = !anchor
+ ? 'needs DSH_TEST_ANCHOR'
+ : supportsLegacyPresentation(anchor)
+  ? false
+  : 'needs the dsh 0.2.1 tools.presentAs API (0.2.2 uses executor plugins)'
 const definition=name=>({name,description:name,parameters:{type:'object',properties:{}},output:{schema:{type:'object',properties:{}},render:()=>[]},async execute(){return {}}})
 
-test('PTC high gates inherited SDK/execution, preserves run_code, next-run unlock, max and two sessions', {skip:!anchor}, async()=>{
+test('PTC high gates inherited SDK/execution, preserves run_code, next-run unlock, max and two sessions', {skip}, async()=>{
  const require=createRequire(resolve(anchor,'package.json'))
  const load=name=>import(pathToFileURL(require.resolve(name)).href)
  const {Context}=await load('@deepseek-ai/cordis')
  const {SystemPrompt}=await load('@deepseek-ai/dsh-system-prompt')
  const {ToolRuntime}=await load('@deepseek-ai/dsh-tools')
+ const nativeExecutor=await load('@deepseek-ai/dsh-tool-executor-native')
  const {createScope}=await load('@deepseek-ai/dsh-scope')
- const root=new Context();const prompt=new SystemPrompt(root,{includeHarnessIdentity:false});const tools=new ToolRuntime(root,{})
+ const root=new Context();const prompt=new SystemPrompt(root,{includeHarnessIdentity:false});const tools=new ToolRuntime(root,{});await root.plugin(nativeExecutor,{}).await()
  root.provide('ptcRuntime',{language:'typescript',programFormat:'function-body'})
  const presetKey={}; const preset=createScope(root,presetKey)
  const a={session:{id:'ptc-a',header:{},events:[]}}, b={session:{id:'ptc-b',header:{},events:[]}}

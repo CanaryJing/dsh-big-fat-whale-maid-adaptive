@@ -11,7 +11,7 @@
 
 ## 2026-10-26 PTC 兼容修复
 
-`deferred-tools-compat.mjs` 在 bundle/profile 层挂载，不在 agent 预设子树。它从正在运行的引擎入口解析同一份 DeepSeek Messages 模块，校验 LLM runtime 身份，只装饰公开 `prepareCall` / `stream`；prepared stream 闭包保持原 connection snapshot。仅在投影后非空工具全部延迟时添加不可调用的传输锚点，保持真实工具的延迟标记与历史消息，不修改底座文件、原请求或全局 fetch。引用计数支持卸载/HMR 恢复。旧引擎无对应适配器时明确告警。测试 `tests/deferred-tools-compat.test.mjs`；当前 0.2.1-rc.2 + 真实 pwsh 全套为 156/156，模拟 HTTP/SSE 不代表真实上游验收。
+`deferred-tools-compat.mjs` 在 bundle/profile 层挂载，不在 agent 预设子树。它从正在运行的引擎入口解析同一份 DeepSeek Messages 模块，校验 LLM runtime 身份，只装饰公开 `prepareCall` / `stream`；prepared stream 闭包保持原 connection snapshot。仅在投影后非空工具全部延迟时添加不可调用的传输锚点，保持真实工具的延迟标记与历史消息，不修改底座文件、原请求或全局 fetch。引用计数支持卸载/HMR 恢复。旧引擎无对应适配器时明确告警。测试 `tests/deferred-tools-compat.test.mjs`；当前 0.2.2-rc.1 + 真实 pwsh 全套为 168 tests / 159 pass / 0 fail / 9 skip（skip 全是三档联动的 0.2.1 呈现 API 用例，见 AIreadme 说明），模拟 HTTP/SSE 不代表真实上游验收。
 
 ## v3.1 关键模块
 
