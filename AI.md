@@ -11,7 +11,11 @@
 
 ## 2026-10-26 PTC 兼容修复
 
-`deferred-tools-compat.mjs` 在 bundle/profile 层挂载，不在 agent 预设子树。它从正在运行的引擎入口解析同一份 DeepSeek Messages 模块，校验 LLM runtime 身份，只装饰公开 `prepareCall` / `stream`；prepared stream 闭包保持原 connection snapshot。仅在投影后非空工具全部延迟时添加不可调用的传输锚点，保持真实工具的延迟标记与历史消息，不修改底座文件、原请求或全局 fetch。引用计数支持卸载/HMR 恢复。旧引擎无对应适配器时明确告警。测试 `tests/deferred-tools-compat.test.mjs`；当前 0.2.2-rc.1 + 真实 pwsh 全套为 168 tests / 159 pass / 0 fail / 9 skip（skip 全是三档联动的 0.2.1 呈现 API 用例，见 AIreadme 说明），模拟 HTTP/SSE 不代表真实上游验收。
+`deferred-tools-compat.mjs` 在 bundle/profile 层挂载，不在 agent 预设子树。它从正在运行的引擎入口解析同一份 DeepSeek Messages 模块，校验 LLM runtime 身份，只装饰公开 `prepareCall` / `stream`；prepared stream 闭包保持原 connection snapshot。仅在投影后非空工具全部延迟时添加不可调用的传输锚点，保持真实工具的延迟标记与历史消息，不修改底座文件、原请求或全局 fetch。引用计数支持卸载/HMR 恢复。旧引擎无对应适配器时明确告警。测试 `tests/deferred-tools-compat.test.mjs`；0.2.2 的执行器迁移与新增回归见 `tests/executor-022.test.mjs`；旧 0.2.1 呈现 API 专用测试在新引擎上继续显式 skip。模拟 HTTP/SSE 或测试 PTC runtime 不代表真实上游验收。
+
+## v3.2.4 执行器适配
+
+`tool-executor-compat.mjs` 从正在运行的引擎入口解析官方 native / PTC 执行器，并校验 ToolsService 身份；每个 agent scope 使用一个稳定执行器。prompt variable 对齐当前档位与已 admission 的门控快照，SDK、run_code 绑定与嵌套执行共用该快照。下一轮解锁不污染宿主提前捕获的 admission，条件未满足、已移除、祖先限制与权限守卫仍有效。不要恢复共享 registry mask 来实现新版门控。`effort-policy.apply` 必须是不可构造的回调，Cordis 才会等待其异步初始化；新版初始化失败显式报错，不静默声称 PTC。
 
 ## v3.1 关键模块
 
@@ -41,7 +45,7 @@
 7. 平台 shell/editor 分派互斥；保留 `wsl-` 变体自禁用条件；服务行按需隔离 realm。
 8. persona 前缀必须保留 `Reasoning language: think in Chinese (简体中文)` 这一条（v2.3.0 起）：中文思考由系统提示词强制，不依赖记忆或用户当场提醒。改写人设时不得删除，也不得因此把 `complete` 改成 `true`。
 9. 工具门控纪律（v3.0.0 起，v3.1.0 更新）：
-   - 裁剪只作用于 `system-prompt/assemble` 的 `tools`，不动 sections；`ctx.tools.schemas(exec.agent)` 必须保持全量，否则 `dev_tool_search` 搜不到被锁工具。
+   - 0.2.2 在执行器的 describe / SDK 与 step toolSet 投影上门控，不依赖旧 waterfall 的 `tools` 返回值；`ctx.tools.schemas(exec.agent)` 必须保持全量，否则 `dev_tool_search` 搜不到被锁工具。
    - 门控工具 `dev_tool_search` 必须常驻且能注册成功；缺失时过滤器降级全量并只告警一次，宁可多花 token 也不锁死会话。
    - v3.1 起成功解锁的实际 accepted 精确名写入官方 `tool/result.meta`（`output.presentationMeta`），不要凭空 append 未注册事件；冷启动/压缩后只从**与本会话一条 `dev_tool_search` callId 配对成功**的 result 恢复。其它工具的文本/meta、伪造 `gate` 名、没有 result 的 tool/call（无法区分中断）都不得解锁；旧日志需要重新调用 `dev_tool_search`。v3.0 固定成功文案同样必须配对 call。没有 `agent.session` 时 `execute` 返回 `accepted: []` 并明确说明未解锁。
    - `groups` 只从执行 scope 的实际目录展开并去重，不绕 scope 解锁不可见工具，不授予权限；恢复时只加已持久化的精确名，绝不在恢复时重新展开组定义。

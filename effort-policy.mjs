@@ -7,19 +7,18 @@
  *   high  → PTC 呈现（模型只见 run_code，工具从程序内调用）+ progressive 解锁；
  *   max   → PTC 呈现 + 全量工具 + 注入"用量 unlimited"预算提示词。
  *
- * 为什么按 scope 声明呈现：`ctx.tools.presentAs()` 是 **scope 级**声明，
- * 调用者的 ctx 就是声明归属（cordis 的 traceable 代理会把 `this.ctx` 换成
- * 调用者 ctx）。所以这里拿 `agent.ctx` 声明，一个会话一份，互不干扰；
- * 同一 scope 重复声明会抛 conflict，故改档必须先 dispose 再声明。
+ * DSH 0.2.2 使用 agent scope 内稳定的工具执行器，组装前更新档位快照。
+ * 旧 presentAs 路径仅保留给兼容测试；新版不修改宿主或共享工具注册表。
  *
  * 档位映射严格照 DeepSeek 思考模式文档（api-docs.deepseek.com/zh-cn/guides/
  * thinking_mode）：minimal/low→low、medium/high/xhigh→high、max/ultra→max、
  * off→low（关闭思考等同不 PTC）。
  *
- * 失败一律 fail-open：PTC 运行时缺失、scope 不合法、事件形状变化等，
- * 都只会让本插件退化成 low 档行为，绝不阻断会话。
+ * 新执行器初始化或组装失败显式报错，不能宣称 PTC 却静默回落 native。
+ * 旧呈现 API 的兼容路径仍保留其历史 fail-open 行为。
  */
 
+import { loadExecutorFactory } from './tool-executor-compat.mjs'
 import { sessionEvents } from './router-core.mjs'
 import { alignToolGate, currentGateMode, GATE_TOOL, setGateMode } from './tool-gate.mjs'
 
@@ -176,7 +175,9 @@ function booleanOption(value, field, fallback) {
   return value
 }
 
-export function apply(ctx, config) {
+// Arrow callback is deliberately non-constructible: Cordis must await its
+// returned setup promise instead of treating it as a service constructor.
+export const apply = (ctx, config) => {
   const source = config === undefined ? {} : config
   if (typeof source !== 'object' || source === null || Array.isArray(source)) {
     throw new TypeError(`${name}: config must be an object`)
@@ -198,6 +199,14 @@ export function apply(ctx, config) {
 
   /** agentCtx → { presentation, disposer }：一个会话一份呈现声明。 */
   const appliedByCtx = new WeakMap()
+  const executors = new WeakMap()
+  const ownedExecutors = new Set()
+  const modern = typeof ctx.tools.setExecutor === 'function' && typeof ctx.tools.presentAs !== 'function'
+  let executorFactory
+  ctx.effect(() => () => {
+    for (const executor of ownedExecutors) executor.dispose()
+    ownedExecutors.clear()
+  })
 
   let warned = false
   const warnOnce = (message) => {
@@ -248,7 +257,7 @@ export function apply(ctx, config) {
   }
 
   /** 一轮开始前把呈现与解锁对齐到当前档位；轮内不再改动。 */
-  function align(agent) {
+  function align(agent, toolSet) {
     if (agent?.ctx === undefined) return
     if (!includeSubagents && (agent.session?.header?.delegationDepth ?? 0) > 0) return
     const band = currentBand(agent)
@@ -258,15 +267,28 @@ export function apply(ctx, config) {
     } catch (error) {
       warnOnce(`${name}: gate mode switch failed: ${String((error && error.message) || error)}`)
     }
-    alignPresentation(agent.ctx, behavior.presentation)
+    if (modern) {
+      let executor = executors.get(agent.ctx)
+      if (!executor) {
+        executor = executorFactory(agent)
+        executors.set(agent.ctx, executor)
+        ownedExecutors.add(executor)
+        agent.ctx.effect(() => () => ownedExecutors.delete(executor))
+      }
+      executor.update(behavior.presentation, toolSet)
+    } else {
+      alignPresentation(agent.ctx, behavior.presentation)
+    }
   }
 
   // system-prompt/assemble runs AFTER schemas and sections were captured.
   // Variable providers run BEFORE those snapshots, including on the first call.
   ctx.effect(() => ctx.systemPrompt.variable('whale_maid_effort_preflight', (context) => {
     try {
-      align(context?.agent)
+      align(context?.agent, context?.toolSet)
     } catch (error) {
+      // New executor failures must not claim PTC while exposing native tools.
+      if (modern) throw error
       warnOnce(`${name}: effort alignment failed: ${String((error && error.message) || error)}`)
     }
     alignToolGate(context?.agent)
@@ -286,4 +308,7 @@ export function apply(ctx, config) {
       return lines.join('\n')
     },
   }))
+  // Cordis awaits this before activating the plugin. No test-only path override
+  // or package-local fallback may resolve a different host's executor classes.
+  if (modern) return loadExecutorFactory(ctx).then(factory => { executorFactory = factory })
 }

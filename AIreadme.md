@@ -55,7 +55,7 @@ config:
 8. 门控生效（v3.0.0 起，v3.1.0 扩展）：新会话首轮只看到常驻核心 + `dev_tool_search`；`query` 搜索、`toolNames` 精确名或 `groups` 组解锁后**下一次请求**可见；组只展开当前目录且不越 scope。解锁恢复只接受与本会话 `dev_tool_search` callId 配对成功的 result；其它工具文本/meta、伪造 gate 名、没有 result 的中断调用保持锁定。没有 `agent.session` 时执行返回 `accepted: []`。`dev_router_status` 的 `toolCatalog=progressive (...)` 与之一致。临时回退可把 `tool-gate` 的 `mode` 改成 `full`。
 9. 路由生效：最近一条真实用户请求决定模式；插件/自动通知/记忆包装不计，多段 `Current runtime context` 整块剥离；明确问句（如何/为什么/how/what）进入 consult，即使含 fix/build；「只做这个错误的修复」「修复这个错误，不要改其他文件」仍是 spec；`继续/好的/可以` 沿用上一实质任务；「解释/评审/只读/先给计划」进入 consult，「实现/修复」仍进入 react/spec；无可靠意图显示 weak。
 10. `delivery_check` 行为已收紧：相对路径只按原生绝对会话 cwd 解析；普通可读非空文件；文本严格 UTF-8；图片/PDF/ZIP 基础格式检查与 central directory 边界；证据 item 必须有 kind/label/result 与本地 target（file/page/image/run/test）；page/image 需人工 `reviewed:true` 且 target 必须是签名有效的图片；图片/PDF/docx/pptx 页面交付至少要一项这样的视觉证据，xlsx 只需数据/测试证据。PASS 只代表基础检查。
-11. 档位生效（v3.2.0 起）：`dev_router_status` 的 `effort=` 行报告 `band=`、`presentation=`、`unlock=` 与强度来源。`low`（minimal/low/off）不产生任何 `presentAs` 声明、门控仍是 `progressive`；`high`（medium/high/xhigh）声明 `ptc`（模型直调只剩 `run_code`）且门控仍 `progressive`，解锁后新工具出现在 SDK 文档里；`max`（max/ultra）声明 `ptc` 且该会话门控切到 `full`，系统提示出现「用量 unlimited」原文。改档在**下一轮 prompt 组装**（`system-prompt/assemble`）时生效；`high → max` 不重新声明呈现（呈现未变，只换解锁）；`max → low` 会 dispose 旧声明。PTC 运行时缺失或声明失败时回落 `native` 并只告警一次，会话不中断。可用 `DSH_MAID_EFFORT=low|high|max` 手动锁定档位复现。
+11. 档位生效（v3.2.4 的 0.2.2 执行器适配）：`dev_router_status` 报告档位、呈现与解锁策略。low＝native＋progressive，high＝PTC＋progressive，max＝PTC＋full；原有 effort 归一规则不变。使用 agent scope 稳定执行器，在 prompt variable 中于当前快照对齐，首轮即可出现 `run_code`。SDK 与程序绑定共用门控快照，同一程序解锁不改变当前绑定，下一请求可用。初始化失败显式报错，不静默回落。可用 `DSH_MAID_EFFORT=low|high|max` 手动锁定复现。
 12. 全局汇报纪律（v3.2.0 起）：persona 前缀含 `Report progress actively` 与 `Report problems immediately` 两条（任何档位都生效），后者带中文提示「遇到问题立刻汇报，不要闷头重试」。
 13. 当前会话未重启时明确说明“磁盘已更新，运行中实例需重启生效”，不要冒称已经热更新。
 
@@ -68,7 +68,7 @@ DSH_TEST_ANCHOR='C:/Users/admin/AppData/Roaming/npm/node_modules/@deepseek-ai/ds
 PWSH_RUNTIME_REAL_PATH='C:/Program Files/PowerShell/7/pwsh.exe' npm test
 ```
 
-当前 Windows 工作树（2026-11-07，anchor 指向桌面版 DSH 0.2.2-rc.1，并设置真实 pwsh 7 路径）：**168 tests / 159 pass / 0 fail / 9 skip**。9 个 skip 全是三档联动的 0.2.1 行为测试——0.2.2 用执行器插件取代了 `tools.presentAs()`，这批用例按能力探测显式跳过并标注原因，等三档移植完成后再打开。未设置 anchor/真实 pwsh 路径时，相关集成用例同样显式 skip，不能计入通过数。
+v3.2.4 在 DSH 0.2.2-rc.1 与真实 PowerShell 7 下：**176 tests / 167 pass / 0 fail / 9 skip**。新增 `tests/executor-022.test.mjs`（8 项全部通过），通过真实 Cordis 依赖守卫装载 effort-policy，并使用真实 SystemPrompt、ToolsService、native / PTC 执行器验证首轮、切档、SDK / 绑定、解锁、恢复、会话隔离、条件 admission 与守卫。该组使用可控测试 PTC runtime（不冒称真实上游模型验收）。0.2.1 旧呈现 API 专用用例在新引擎上仍按能力探测显式 skip；未设置 anchor / 真实 pwsh 路径时，对应集成用例也显式 skip，不能计入通过数。
 
 常规 PowerShell 选择/默认回退测试完全 mock，不要求卸载本机 PowerShell 7 或真的运行 5.1。真实绑定检查仅执行指定的 PowerShell 7 路径。Git Bash 真实转义测试创建临时目录并自行清理，不运行攻击命令或 WSL。真实 DSH 集成使用已安装引擎的 `SystemPrompt` / `ToolRuntime`，验证 delivery schema、gate `presentationMeta` 持久化形状、callId 配对恢复与 shell section 真实顺序；不改 `node_modules`。
 
@@ -83,7 +83,7 @@ PWSH_RUNTIME_REAL_PATH='C:/Program Files/PowerShell/7/pwsh.exe' npm test
 | 工作目录报错 | 传入当前后端支持的绝对路径，勿改成系统目录后继续任务 |
 | 预设 never started / 加载失败 | 检查包已安装、exports 完整、本地插件不是 profile 相对路径 |
 | 已安装但行为没变 | 确认实际使用的 profile；对应宿主可能仍在运行旧模块 |
-| 档位没生效（v3.2） | 先看 `dev_router_status` 的 `effort=` 行：`from default` 说明没有任何来源给出强度（检查 model-selection 事件、agent 选项、settings 或 `DSH_MAID_EFFORT`）；`band=low` 而期望 PTC，多半是强度值不在官方映射表（未知值保守归低档）。改档当轮不生效属正常——下一轮 pre-step 才对齐；新会话首轮若仍为 native，检查 `effort-policy` 行是否装载、`ctx.ptcRuntime` 服务是否存在，以及告警日志里是否有 `presentation "ptc" unavailable`（PTC 运行时缺失时按设计回落 native，不会报错中断）。 |
+| 档位没生效（v3.2） | 先看 `dev_router_status` 的 `effort=` 行：`from default` 说明没有任何来源给出强度（检查 model-selection 事件、agent 选项、settings 或 `DSH_MAID_EFFORT`）；`band=low` 而期望 PTC，多半是强度值不在官方映射表（未知值保守归低档）。新会话首轮应已为 PTC；若仍为 native，检查实际安装与运行版本是否均为 v3.2.4、`effort-policy` 是否装载及 `ptcRuntime` 服务是否存在。新版初始化失败显式报错，不应接受静默回落。 |
 | 工具列表少了（v3） | 属正常门控：用 `dev_tool_search` 搜索/解锁；确认 `tool-gate` 行已装载且 `mode` 不是 `full`……若本该全量却仍被裁，检查 `mode` 配置 |
 | 解锁了但仍不可见 | 解锁从**下一次请求**生效；同一轮内不会补进当前请求。恢复会话后仍不可见则检查成功 `tool/result` 的 `meta.accepted` 是否与 `dev_tool_search` 的 callId 配对；仅 call 无 result（中断）的旧日志需要重新解锁；失败/其它工具的伪造结果不会恢复 |
 | delivery_check 误报 PASS/FAIL | 先看 `scope` 与具体 check。相对路径必须有原生绝对会话 cwd；文本超限会 FAIL；未知扩展名会做可读性检查；page/image 的 reviewed 只是人工声明，且 target 必须是签名有效的图片；图片/PDF/docx/pptx 页面交付没有视觉证据会 FAIL；xlsx 不要求视觉证据 |

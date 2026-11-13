@@ -219,6 +219,14 @@ export function setGateMode(mode, options) {
  * 当前门控模式（插件未装载时返回最近一次设定值）。
  * @param {object} [session] 传了就返回该会话的覆盖值，否则返回全局默认
  */
+/** Executor-era gate projection: leave the registry intact for discovery and admission. */
+export function filterGateDefinitions(agent, definitions) {
+  if (!runtime.mounted || currentGateMode(agent?.session) !== 'progressive' || !agent?.session) return definitions
+  if (!runtime.includeSubagents && (agent.session.header?.delegationDepth ?? 0) > 0) return definitions
+  const keep = new Set([...runtime.resident, ...entryFor(agent.session).unlocked])
+  return definitions.filter(tool => keep.has(tool.name))
+}
+
 /** Called by effort preflight after presentation changes, before schema collection. */
 export function alignToolGate(agent) {
   runtime.alignBeforeSnapshot?.(agent)

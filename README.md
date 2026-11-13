@@ -1,17 +1,17 @@
-# DS女仆长模式 · v3.2.3
+# DS女仆长模式 · v3.2.4
 
 DSH 的个人工程预设：**思考强度三档联动工具面（low 原生 / high PTC / max PTC+全量）、系统提示词要求中文思考并主动汇报进度与风险、常驻核心按需解锁、可靠环境简报、实时请求模型 ID、安全工作目录、PowerShell 7 优先绑定**，保留温柔严谨的蓝发蓝瞳鲸鱼娘女仆长风格。
 
 整个目录是一个 DSH bundle；自定义模块只使用 Node 内置模块及包内导入，不依赖 `dsh-wsl-workspace`。组合本身仍依赖 DSH 官方插件与服务，不是脱离 DSH 的独立运行时。
 
-## v3.2.3：适配 DSH 0.2.2 装载（2026-11-07）
+## v3.2.4：恢复 DSH 0.2.2 的 PTC 三档联动（2026-11-13）
 
-[下载 v3.2.3](https://github.com/CanaryJing/dsh-big-fat-whale-maid-adaptive/releases/tag/v3.2.3) · [发行说明](./releases/v3.2.3.md)
+[下载 v3.2.4](https://github.com/CanaryJing/dsh-big-fat-whale-maid-adaptive/releases/tag/v3.2.4) · [发行说明](./releases/v3.2.4.md)
 
-- DSH 0.2.2 把独立的 `list-agents` 插件并进 `@deepseek-ai/dsh-tool-subagent-control`，`./list-agents` 子路径已从 `exports` 移除。v3.2.2 遗留的 `tool-subagent-list-agents` 行因此解析失败，装载审计把它报成 `never started`；本版删除该行，`list_agents` 能力不变（由根插件注册）。
-- `package.json` 增加 `engines.dsh: ">=0.2.2-rc.1 <0.3.0-0"`：0.2.1 及更早内核请继续使用 v3.2.2，不再出现「能装但有一行装不上」的状态。
-- 新增 `tests/plugin-resolution.test.mjs`：锚定真实引擎解析补丁里每个插件名，上游再次合并或删除子路径时先在这里失败，而不是等用户装载审计报 `never started`。
-- **已知限制**：DSH 0.2.2 用执行器插件（`-native` / `-ptc`）取代了 `tools.presentAs()` 与 `tools.modeFor()`，本版仍沿用 0.2.1 的呈现 API。在 0.2.2 上预设可干净装载、`low` 档行为不变，但 `high` / `max` 会告警一次并回落 `native`（不切 PTC）。三档迁移到执行器模型排在下一个功能版本。
+- 适配 0.2.2 的官方 native / PTC 执行器，恢复 **high＝PTC＋按需解锁，max＝PTC＋全量工具**；low 仍是原生工具＋按需解锁。
+- 首轮与切档在当前提示词快照生效；同一程序解锁后不改变当前绑定，下一次请求才绑定新工具，不多等一轮。
+- SDK 与程序绑定共用门控快照，同时保留宿主条件工具、作用域、权限守卫与审批；不修改底座文件或共享工具注册表。
+- 延续 v3.2.3 的 `list_agents` 装载修复及 `engines.dsh: ">=0.2.2-rc.1 <0.3.0-0"`；旧内核请继续使用 v3.2.2。
 
 ## v3.2.0 重点：思考强度三档驱动工具面
 
@@ -29,9 +29,9 @@ DSH 的个人工程预设：**思考强度三档联动工具面（low 原生 / h
 | 解锁策略 | `progressive`：常驻核心 + `dev_tool_search` | `progressive` | `full`：已注册工具全量可见 |
 | 预算提示 | 无 | PTC 用法说明 | PTC 说明 + 「用量 unlimited、放开花」原文提示 |
 
-- **按会话声明，互不干扰**：呈现用 `ctx.tools.presentAs()` 声明在**该会话的 agent scope**（cordis 的 traceable 代理会把 `this.ctx` 换成调用者 ctx），所以两个会话可以一个跑 low、一个跑 max；解锁模式也支持会话级覆盖。
-- **改档在下一轮组装时生效**：对齐挂在 `system-prompt/assemble`（该事件能拿到 `agent` 与 `agent.ctx`；`agent/pre-step` 的 payload 里没有 agent，挂不上），对齐在 `next()` 之前，PTC 说明段当轮即就绪；轮内不再改动 schema，避免同一轮工具面抖动；同一 scope 重复声明会抛 conflict，因此换档先 dispose 再声明；`high → max` 只换解锁策略，不重新声明呈现。
-- **失败一律 fail-open**：PTC 运行时缺失、scope 不合法、声明抛错，都只回落 `native` 并只告警一次，绝不阻断会话。低档不做任何呈现声明，行为与 v3.1.0 逐字一致。
+- **按会话选择，互不干扰**：通过 `agent.ctx.tools.setExecutor()` 注册稳定执行器，每个 agent scope 有独立的呈现与解锁快照。
+- **当前快照生效**：prompt variable 在工具声明与 SDK 收集前对齐；high / max 首轮就只有 `run_code`。不通过共享 registry 限制门控，避免旧限制污染下一步的条件工具 admission；同一程序内解锁不改变当前绑定。
+- **显式失败**：新版执行器初始化或 PTC 运行时缺失时显式报错，不再出现系统提示宣称 PTC、实际却静默回落 native 的状态。
 - **手动锁定**：设环境变量 `DSH_MAID_EFFORT=low|high|max`（优先级最高，便于测试与临时压制）。`dev_router_status` 的 `effort=` 行会报告当前档位、呈现、解锁与强度来源。
 - **全局汇报纪律**：persona 前缀新增两条（任何档位都生效）——主动汇报进度（几步一次说清在做什么、改了什么、还剩什么），遇到检查失败/路径错误/权限拒绝/计划不再成立时当轮立即汇报，不要闷头重试。
 
@@ -118,18 +118,18 @@ v3 的做法：
 
 本版在 **DSH 0.2.2-rc.1** 实测，并声明 `engines.dsh: ">=0.2.2-rc.1 <0.3.0-0"`。0.2.1 及更早内核请继续使用 [v3.2.2](https://github.com/CanaryJing/dsh-big-fat-whale-maid-adaptive/releases/tag/v3.2.2)：旧内核没有 `list_agents` 的根插件实现，本版删除的那一行在那里是必需的。使用当前支持 bundle、prompt variable 与 section API 的 DSH；不再支持旧 `.agent-presets` 目录安装方式。
 
-> 已知限制：0.2.2 的执行器模型取代了 `tools.presentAs()`，`high` / `max` 档在本版会告警并回落 `native`，三档迁移见 [v3.2.3 发行说明](./releases/v3.2.3.md)。
+> v3.2.4 已迁移到 0.2.2 执行器模型；high / max 恢复 PTC。安装后须重启对应宿主，运行中的旧模块不会因发布新版而自动替换。
 
 ```bash
 # 从源码目录安装；请替换路径和实际 profile
  dsh plugin --profile web add "file:/absolute/path/to/big-fat-whale-maid-adaptive"
 
 # 或安装 GitHub Release 下载的 tgz
- dsh plugin --profile web add "file:/absolute/path/to/dsh-preset-big-fat-whale-maid-adaptive-3.1.0.tgz"
+ dsh plugin --profile web add "https://github.com/CanaryJing/dsh-big-fat-whale-maid-adaptive/releases/download/v3.2.4/dsh-preset-big-fat-whale-maid-adaptive-3.2.4.tgz"
 ```
 
 - 使用实际宿主对应的官方插件管理 CLI。Electron 的 `desktop` 档须用桌面版自带 CLI 管理。
-- **Tauri profile 使用真实目录来源，不要用 `file:…tgz`。** 已复现 Tauri 启动清理把 tgz 误判为悬空目录并自动卸载；请先解压到持久目录或使用源码目录，再执行 `dsh plugin --profile tauri add "file:/absolute/path/to/preset-directory"`，并保留来源目录。
+- 日常推荐从市场或 GitHub Release 的 HTTPS tgz 地址安装；Tauri 使用实际 `tauri` profile。`file:` 本地压缩包不是远端发行源，不要与长期源码 `link:` 安装混淆。
 - 安装完成后重启对应宿主，并选择「DS女仆长模式」。安装文件成功不代表正在运行的旧实例已经热更新。
 - `git pull` 后须重新安装；本地 `file:` 依赖通常是安装快照，不保证自动跟随源码。
 - 不要直接复制整个 profile 或 `node_modules`；遇供应链/兼容限制应检查原因，不要默默关闭保护。
@@ -147,7 +147,7 @@ DSH_TEST_ANCHOR='C:/Users/admin/AppData/Roaming/npm/node_modules/@deepseek-ai/ds
 PWSH_RUNTIME_REAL_PATH='C:/Program Files/PowerShell/7/pwsh.exe' npm test
 ```
 
-在本 Windows 工作树中，同时设置上述两个变量后共 **122 项测试全部执行、0 skip、0 fail**。覆盖首轮异步探测、每轮/重启/压缩环境上下文、切模、字面大括号路径、旧指令提示识别、shell 转义与失败阻断、PowerShell 7 选择及默认后端回退；v3.1 另覆盖明确问句/范围限制路由、多段 runtime 快照、交付文件格式/原生 cwd/视觉证据/ZIP 伪造、工具组作用域与 callId 配对恢复、空 `accepted` meta 的权威性、真实 DSH Tools 注册与 `tool-result.meta` 持久化、真实 `SystemPrompt` 的 shell section 顺序。没有真实 DSH 锚点时相关集成用例会显式 skip，不会伪装成已通过。
+v3.2.4 在 DSH 0.2.2-rc.1 与真实 PowerShell 7 下：**176 tests / 167 pass / 0 fail / 9 skip**；9 个 skip 是仅面向旧 0.2.1 呈现 API 的测试，新增 8 个 0.2.2 执行器回归全部通过。覆盖首轮异步探测、每轮/重启/压缩环境上下文、切模、字面大括号路径、旧指令提示识别、shell 转义与失败阻断、PowerShell 7 选择及默认后端回退；v3.1 另覆盖明确问句/范围限制路由、多段 runtime 快照、交付文件格式/原生 cwd/视觉证据/ZIP 伪造、工具组作用域与 callId 配对恢复、空 `accepted` meta 的权威性、真实 DSH Tools 注册与 `tool-result.meta` 持久化、真实 `SystemPrompt` 的 shell section 顺序。没有真实 DSH 锚点时相关集成用例会显式 skip，不会伪装成已通过。
 
 ## 能力与边界
 
@@ -169,6 +169,7 @@ v3 的按需解锁是自研门控（`tool-gate.mjs`：常驻核心 + `dev_tool_s
 
 ## 版本历史
 
+- **v3.2.4**：恢复 0.2.2 的 PTC 三档联动，修复首轮/切档、下轮解锁、SDK/绑定快照与 low 档声明裁剪，新增真实 Cordis/执行器回归。详见 [发行说明](./releases/v3.2.4.md)。
 - **v3.2.3**：适配 DSH 0.2.2 —— `list_agents` 已并入 `@deepseek-ai/dsh-tool-subagent-control` 根插件，删除预设里失效的 `tool-subagent-list-agents` 行，修掉装载审计的 `never started`；新增插件名解析回归测试与 `engines.dsh` 声明。三档到执行器模型的迁移尚未完成。详见 [发行说明](./releases/v3.2.3.md)。
 - **v3.2.2**：`subagent` 启用宿主模型选择（`modelSelectionSettings`），`agent.cordis.yml` 与 bundle patch 同步；子代理可选 provider / model / reasoning effort。
 - **v3.2.1**：PTC 门控收紧（high 档裁剪 SDK 与嵌套执行）；切档前移到早期 prompt 变量提供者修首轮/切档时序；`tool-gate` 补声明 `systemPrompt` 注入。详见 [发行说明](./releases/v3.2.1.md)。
